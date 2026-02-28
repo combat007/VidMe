@@ -1,3 +1,9 @@
+# Suppress warnings for Play Core classes referenced by Flutter's deferred
+# components (not used in this app — safe to ignore)
+-dontwarn com.google.android.play.core.**
+-dontwarn io.flutter.app.FlutterPlayStoreSplitApplication
+-dontwarn io.flutter.embedding.engine.deferredcomponents.**
+
 # Flutter wrapper
 -keep class io.flutter.app.** { *; }
 -keep class io.flutter.plugin.** { *; }

@@ -34,12 +34,12 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace "com.vidme.app"
-    compileSdk 34
+    compileSdk 35
 
     defaultConfig {
         applicationId "com.vidme.app"
         minSdk 21
-        targetSdk 34
+        targetSdk 35
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
         multiDexEnabled true
