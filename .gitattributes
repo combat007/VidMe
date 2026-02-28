@@ -1,0 +1,10 @@
+# Force LF for shell scripts and gradle files (must not have CRLF on Linux)
+*.sh text eol=lf
+gradlew text eol=lf
+*.gradle text eol=lf
+*.gradle.kts text eol=lf
+Dockerfile text eol=lf
+
+# Force CRLF for Windows batch files
+*.bat text eol=crlf
+gradlew.bat text eol=crlf

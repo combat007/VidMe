@@ -36,9 +36,11 @@ jobs:
           curl -L "https://repo.gradle.org/gradle/libs-releases/org/gradle/gradle-wrapper/8.4/gradle-wrapper-8.4.jar" \
             -o gradle-wrapper.jar
 
-      - name: Make gradlew executable
+      - name: Fix gradlew line endings and permissions
         working-directory: ./frontend/android
-        run: chmod +x gradlew
+        run: |
+          sed -i 's/\r//' gradlew
+          chmod +x gradlew
 
       - name: Build APK
         working-directory: ./frontend
