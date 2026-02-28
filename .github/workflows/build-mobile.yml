@@ -30,6 +30,12 @@ jobs:
         working-directory: ./frontend
         run: flutter pub get
 
+      - name: Download gradle wrapper jar
+        working-directory: ./frontend/android/gradle/wrapper
+        run: |
+          curl -L "https://repo.gradle.org/gradle/libs-releases/org/gradle/gradle-wrapper/8.4/gradle-wrapper-8.4.jar" \
+            -o gradle-wrapper.jar
+
       - name: Make gradlew executable
         working-directory: ./frontend/android
         run: chmod +x gradlew
