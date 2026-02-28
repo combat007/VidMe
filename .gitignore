@@ -1,0 +1,63 @@
+# ── Node / Backend ───────────────────────────────────────────────
+node_modules/
+dist/
+build/
+*.log
+npm-debug.log*
+
+# Environment files (never commit secrets)
+.env
+.env.*
+!.env.example
+
+# ── Flutter / Frontend ────────────────────────────────────────────
+frontend/.dart_tool/
+frontend/.flutter-plugins
+frontend/.flutter-plugins-dependencies
+frontend/.packages
+frontend/build/
+frontend/pubspec.lock
+
+# Android
+frontend/android/.gradle/
+frontend/android/captures/
+frontend/android/local.properties
+frontend/android/gradle/wrapper/gradle-wrapper.jar
+frontend/android/key.properties
+frontend/android/**/*.jks
+frontend/android/**/*.keystore
+frontend/android/GeneratedPluginRegistrant.java
+
+# iOS
+frontend/ios/.symlinks/
+frontend/ios/Flutter/flutter_export_environment.sh
+frontend/ios/Flutter/Generated.xcconfig
+frontend/ios/Pods/
+frontend/ios/*.xcworkspace/xcuserdata/
+
+# Web build output
+frontend/web/flutter_service_worker.js
+
+# ── Docker ────────────────────────────────────────────────────────
+postgres-data/
+redis-data/
+
+# ── Prisma ────────────────────────────────────────────────────────
+backend/prisma/*.db
+
+# ── Claude Code ───────────────────────────────────────────────────
+.claude/
+
+# ── OS / Editor ───────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ── Test artifacts ────────────────────────────────────────────────
+playwright-test/
+browser_test.mp4
+browser_test.mp4;C
+playwright-test;C

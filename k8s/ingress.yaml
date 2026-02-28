@@ -1,0 +1,46 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vidme-ingress
+  namespace: vidme
+  annotations:
+    # nginx-ingress controller (install via Helm: ingress-nginx)
+    kubernetes.io/ingress.class: nginx
+    # cert-manager TLS provisioning (install cert-manager + a ClusterIssuer)
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # Allow large video uploads (2 GB)
+    nginx.ingress.kubernetes.io/proxy-body-size: 2048m
+    # Long timeouts for upload and streaming
+    nginx.ingress.kubernetes.io/proxy-read-timeout: '300'
+    nginx.ingress.kubernetes.io/proxy-send-timeout: '300'
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: '300'
+spec:
+  tls:
+    - hosts:
+        - vidme.example.com   # replace with your domain
+      secretName: vidme-tls
+  rules:
+    - host: vidme.example.com  # replace with your domain
+      http:
+        paths:
+          - path: /api/
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 3000
+          - path: /health
+            pathType: Exact
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 3000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

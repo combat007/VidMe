@@ -1,0 +1,96 @@
+name: Build Mobile Apps
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.4'
+          channel: stable
+          cache: true
+
+      - name: Get Flutter dependencies
+        working-directory: ./frontend
+        run: flutter pub get
+
+      - name: Make gradlew executable
+        working-directory: ./frontend/android
+        run: chmod +x gradlew
+
+      - name: Build APK
+        working-directory: ./frontend
+        run: |
+          flutter build apk --release \
+            --dart-define=API_BASE_URL=${{ secrets.API_BASE_URL }}
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vidme-android-${{ github.sha }}
+          path: frontend/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
+
+  build-ios:
+    name: Build iOS App
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.4'
+          channel: stable
+          cache: true
+
+      - name: Generate iOS platform (idempotent)
+        working-directory: ./frontend
+        run: flutter create --platforms ios . || true
+
+      - name: Add iOS usage descriptions to Info.plist
+        working-directory: ./frontend/ios/Runner
+        run: |
+          add_plist_key() {
+            local key=$1 value=$2
+            /usr/libexec/PlistBuddy -c "Add :$key string '$value'" Info.plist 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Set :$key '$value'" Info.plist
+          }
+          add_plist_key NSPhotoLibraryUsageDescription "VidMe needs access to your photo library to select videos."
+          add_plist_key NSCameraUsageDescription "VidMe needs camera access to record videos."
+          add_plist_key NSMicrophoneUsageDescription "VidMe needs microphone access to record audio with your videos."
+
+      - name: Build iOS (no codesign)
+        working-directory: ./frontend
+        run: |
+          flutter build ios --release --no-codesign \
+            --dart-define=API_BASE_URL=${{ secrets.API_BASE_URL }}
+
+      - name: Package Runner.app as zip
+        run: |
+          cd frontend/build/ios/iphoneos
+          zip -r vidme-ios.zip Runner.app
+
+      - name: Upload iOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vidme-ios-${{ github.sha }}
+          path: frontend/build/ios/iphoneos/vidme-ios.zip
+          retention-days: 30

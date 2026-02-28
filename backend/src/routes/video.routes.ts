@@ -1,0 +1,45 @@
+import { Router } from 'express';
+import { authenticate } from '../middleware/auth.middleware';
+import { uploadVideo, uploadThumbnail } from '../middleware/upload.middleware';
+import {
+  uploadVideoFile,
+  uploadThumbnailFile,
+  createVideo,
+  listVideos,
+  getVideo,
+  updateVideo,
+  deleteVideo,
+} from '../controllers/video.controller';
+
+const router = Router();
+
+// Public (with optional auth for 18+ filtering)
+router.get('/', (req, res, next) => {
+  // Optionally authenticate but don't require it
+  const auth = req.headers.authorization;
+  if (auth) {
+    return authenticate(req as any, res, () => listVideos(req as any, res));
+  }
+  return listVideos(req as any, res);
+});
+
+router.get('/:id', (req, res) => {
+  const auth = req.headers.authorization;
+  if (auth) {
+    return authenticate(req as any, res, () => getVideo(req as any, res));
+  }
+  return getVideo(req as any, res);
+});
+
+// Protected
+router.post('/upload', authenticate, uploadVideo.single('video'), (req, res) =>
+  uploadVideoFile(req as any, res)
+);
+router.post('/upload-thumbnail', authenticate, uploadThumbnail.single('thumbnail'), (req, res) =>
+  uploadThumbnailFile(req as any, res)
+);
+router.post('/', authenticate, (req, res) => createVideo(req as any, res));
+router.patch('/:id', authenticate, (req, res) => updateVideo(req as any, res));
+router.delete('/:id', authenticate, (req, res) => deleteVideo(req as any, res));
+
+export default router;

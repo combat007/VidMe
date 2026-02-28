@@ -1,0 +1,79 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: vidme_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vidme_user
+      POSTGRES_PASSWORD: vidme_pass
+      POSTGRES_DB: vidme_db
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U vidme_user -d vidme_db']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: vidme_redis
+    restart: unless-stopped
+    command: redis-server --save "" --appendonly no
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vidme_backend
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      DATABASE_URL: postgresql://vidme_user:vidme_pass@postgres:5432/vidme_db
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-change_this_secret_in_production}
+      PINATA_API_KEY: ${PINATA_API_KEY}
+      PINATA_API_SECRET: ${PINATA_API_SECRET}
+      PINATA_JWT: ${PINATA_JWT}
+      PORT: 3000
+      NODE_ENV: production
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-noreply@vidme.app}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - /tmp/vidme-uploads:/tmp
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: vidme_frontend
+    restart: unless-stopped
+    ports:
+      - '80:80'
+    environment:
+      API_BASE_URL: ${API_BASE_URL:-http://localhost:3000}
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

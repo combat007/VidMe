@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: vidme
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      # Must be > the 30s forced-exit timeout in app.ts so k8s doesn't SIGKILL before drain
+      terminationGracePeriodSeconds: 35
+      containers:
+        - name: backend
+          image: ghcr.io/OWNER/vidme-backend:latest  # replace OWNER
+          ports:
+            - containerPort: 3000
+          env:
+            - name: PORT
+              value: '3000'
+            - name: NODE_ENV
+              value: production
+            - name: REDIS_URL
+              value: redis://redis.vidme.svc.cluster.local:6379
+            # Build DATABASE_URL from individual secret keys so the password never
+            # appears in a ConfigMap
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_DB
+            - name: DATABASE_URL
+              value: postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres.vidme.svc.cluster.local:5432/$(POSTGRES_DB)
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: backend-secret
+                  key: JWT_SECRET
+            - name: PINATA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: backend-secret
+                  key: PINATA_API_KEY
+            - name: PINATA_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: backend-secret
+                  key: PINATA_API_SECRET
+            - name: PINATA_JWT
+              valueFrom:
+                secretKeyRef:
+                  name: backend-secret
+                  key: PINATA_JWT
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: tmp-uploads
+              mountPath: /tmp
+      volumes:
+        - name: tmp-uploads
+          emptyDir: {}
