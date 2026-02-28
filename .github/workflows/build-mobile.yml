@@ -30,17 +30,17 @@ jobs:
         working-directory: ./frontend
         run: flutter pub get
 
-      - name: Download gradle wrapper jar
-        working-directory: ./frontend/android/gradle/wrapper
-        run: |
-          curl -L "https://repo.gradle.org/gradle/libs-releases/org/gradle/gradle-wrapper/8.4/gradle-wrapper-8.4.jar" \
-            -o gradle-wrapper.jar
-
       - name: Fix gradlew line endings and permissions
         working-directory: ./frontend/android
         run: |
           sed -i 's/\r//' gradlew
           chmod +x gradlew
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: wrapper
+          build-root-directory: frontend/android
 
       - name: Build APK
         working-directory: ./frontend
