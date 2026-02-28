@@ -30,17 +30,12 @@ jobs:
         working-directory: ./frontend
         run: flutter pub get
 
-      - name: Fix gradlew line endings and permissions
-        working-directory: ./frontend/android
+      - name: Regenerate gradlew via Flutter (fixes CRLF + wrapper jar)
+        working-directory: ./frontend
         run: |
-          sed -i 's/\r//' gradlew
-          chmod +x gradlew
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: wrapper
-          build-root-directory: frontend/android
+          rm -f android/gradlew android/gradlew.bat
+          flutter create --platforms=android .
+          chmod +x android/gradlew
 
       - name: Build APK
         working-directory: ./frontend
