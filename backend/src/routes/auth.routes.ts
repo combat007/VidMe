@@ -8,6 +8,8 @@ import {
   resetPassword,
   changePassword,
   googleAuth,
+  googleInit,
+  googleCallback,
   githubInit,
   githubCallback,
   oauthComplete,
@@ -26,7 +28,9 @@ router.post('/reset-password', resetPassword);
 router.post('/change-password', authenticate, (req, res) => changePassword(req as any, res));
 
 // OAuth — Google
-router.post('/google', googleAuth);
+router.post('/google', googleAuth);          // mobile: ID token verification
+router.get('/google', googleInit);           // web: redirect flow
+router.get('/google/callback', googleCallback);
 
 // OAuth — GitHub (browser redirect flow)
 router.get('/github', githubInit);

@@ -194,6 +194,74 @@ export async function googleAuth(req: Request, res: Response): Promise<void> {
   }
 }
 
+// ─── Google OAuth (redirect flow — used by web via FlutterWebAuth2) ────────────
+
+/** GET /api/auth/google?platform=web|mobile
+ *  Redirects the browser to Google's authorisation page. */
+export async function googleInit(req: Request, res: Response): Promise<void> {
+  const platform = (req.query.platform as string) || 'web';
+  const state = Buffer.from(JSON.stringify({ platform, nonce: uuidv4() })).toString('base64url');
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost';
+  const callbackUrl = encodeURIComponent(`${frontendUrl}/api/auth/google/callback`);
+  res.redirect(
+    `https://accounts.google.com/o/oauth2/v2/auth?client_id=${process.env.GOOGLE_CLIENT_ID}&redirect_uri=${callbackUrl}&response_type=code&scope=email%20profile&state=${state}&access_type=offline`,
+  );
+}
+
+/** GET /api/auth/google/callback  (Google redirects here after authorisation) */
+export async function googleCallback(req: Request, res: Response): Promise<void> {
+  const { code, state } = req.query as Record<string, string>;
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost';
+
+  let platform = 'web';
+  try { platform = JSON.parse(Buffer.from(state, 'base64url').toString()).platform ?? 'web'; } catch (_) {}
+
+  const redirect = (params: Record<string, string>) => {
+    const qs = new URLSearchParams(params).toString();
+    if (platform === 'mobile') return res.redirect(`vidmez://oauth/callback?${qs}`);
+    return res.redirect(`${frontendUrl}/oauth-callback.html?${qs}`);
+  };
+
+  if (!code) { redirect({ error: 'No authorisation code received' }); return; }
+
+  try {
+    const callbackUrl = `${frontendUrl}/api/auth/google/callback`;
+
+    // Exchange code → tokens
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: process.env.GOOGLE_CLIENT_ID!,
+        client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+        redirect_uri: callbackUrl,
+        grant_type: 'authorization_code',
+      }),
+    });
+    const tokens = await tokenRes.json() as Record<string, string>;
+    if (!tokens.id_token) { redirect({ error: 'Failed to obtain tokens from Google' }); return; }
+
+    // Verify ID token
+    const infoRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${tokens.id_token}`);
+    const payload = await infoRes.json() as Record<string, string>;
+    if (!infoRes.ok || payload.error_description) { redirect({ error: 'Invalid Google token' }); return; }
+
+    const { email, name, sub: googleId } = payload;
+    if (!email) { redirect({ error: 'Google account has no email' }); return; }
+
+    const result = await findOrInitOAuthUser('google', googleId, email, name);
+    if (result.kind === 'pending') {
+      redirect({ pending: result.pendingToken, email: result.email });
+      return;
+    }
+    redirect({ token: issueToken(result.user.id) });
+  } catch (err) {
+    console.error('Google callback error:', err);
+    redirect({ error: 'Authentication failed' });
+  }
+}
+
 // ─── GitHub OAuth ──────────────────────────────────────────────────────────────
 
 /** GET /api/auth/github?platform=web|mobile

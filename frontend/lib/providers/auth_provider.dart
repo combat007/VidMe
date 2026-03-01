@@ -107,20 +107,54 @@ class AuthProvider extends ChangeNotifier {
   Future<OAuthResult?> loginWithGoogle() async {
     _error = null;
     try {
-      final account = await _googleSignIn.signIn();
-      if (account == null) return null; // user cancelled
+      if (kIsWeb) {
+        // Web: server-side redirect flow (identical to GitHub, avoids idToken issues)
+        final url = '${ApiConfig.baseUrl}/api/auth/google?platform=web';
+        final callbackScheme = '${Uri.base.origin}/oauth-callback.html';
 
-      final auth = await account.authentication;
-      final idToken = auth.idToken;
-      if (idToken == null) {
-        _error = 'Could not get Google credentials. '
-            'Ensure GOOGLE_CLIENT_ID is set and the app is registered in Google Cloud Console.';
+        final resultUrl = await FlutterWebAuth2.authenticate(
+          url: url,
+          callbackUrlScheme: callbackScheme,
+        );
+
+        final uri = Uri.parse(resultUrl);
+        final params = uri.queryParameters;
+
+        if (params.containsKey('error')) {
+          _error = params['error'];
+          notifyListeners();
+          return null;
+        }
+        if (params.containsKey('token')) {
+          await _storeAndFetch(params['token']!);
+          return const OAuthResult(needsAge: false);
+        }
+        if (params.containsKey('pending')) {
+          return OAuthResult(
+            needsAge: true,
+            pendingToken: params['pending'],
+            email: params['email'],
+          );
+        }
+        _error = 'Google sign-in failed: unexpected response';
         notifyListeners();
         return null;
-      }
+      } else {
+        // Mobile: use google_sign_in package (Play Services)
+        final account = await _googleSignIn.signIn();
+        if (account == null) return null;
 
-      final result = await ApiService.googleAuth(idToken: idToken);
-      return _handleOAuthResult(result);
+        final auth = await account.authentication;
+        final idToken = auth.idToken;
+        if (idToken == null) {
+          _error = 'Could not get Google credentials. '
+              'Ensure GOOGLE_CLIENT_ID is set and the app is registered in Google Cloud Console.';
+          notifyListeners();
+          return null;
+        }
+        final result = await ApiService.googleAuth(idToken: idToken);
+        return _handleOAuthResult(result);
+      }
     } catch (e) {
       _error = 'Google sign-in failed: $e';
       notifyListeners();
