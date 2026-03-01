@@ -30,14 +30,12 @@ jobs:
         working-directory: ./frontend
         run: flutter pub get
 
-      - name: Regenerate gradlew via Flutter (fixes CRLF + wrapper jar)
+      - name: Download gradle-wrapper.jar and make gradlew executable
         working-directory: ./frontend
         run: |
-          rm -f android/gradlew android/gradlew.bat
-          flutter create --platforms=android .
+          curl -L -o android/gradle/wrapper/gradle-wrapper.jar \
+            https://raw.githubusercontent.com/gradle/gradle/v8.9.0/gradle/wrapper/gradle-wrapper.jar
           chmod +x android/gradlew
-          # Ensure Kotlin version is compatible with latest plugins (package_info_plus 9+ needs 2.x)
-          sed -i 's/id "org.jetbrains.kotlin.android" version "[^"]*"/id "org.jetbrains.kotlin.android" version "2.1.0"/' android/settings.gradle
 
       - name: Write google-services.json
         env:
