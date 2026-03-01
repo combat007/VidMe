@@ -217,9 +217,12 @@ export async function googleCallback(req: Request, res: Response): Promise<void>
   try { platform = JSON.parse(Buffer.from(state, 'base64url').toString()).platform ?? 'web'; } catch (_) {}
 
   const redirect = (params: Record<string, string>) => {
-    const qs = new URLSearchParams(params).toString();
-    if (platform === 'mobile') return res.redirect(`vidmez://oauth/callback?${qs}`);
-    return res.redirect(`${frontendUrl}/oauth-callback.html?${qs}`);
+    if (platform === 'mobile') {
+      return res.redirect(`vidmez://oauth/callback?${new URLSearchParams(params).toString()}`);
+    }
+    // Web: full-page redirect — prefix with oauth_ so Flutter initialize() picks them up
+    const webParams = Object.fromEntries(Object.entries(params).map(([k, v]) => [`oauth_${k}`, v]));
+    return res.redirect(`${frontendUrl}/?${new URLSearchParams(webParams).toString()}`);
   };
 
   if (!code) { redirect({ error: 'No authorisation code received' }); return; }
@@ -285,11 +288,12 @@ export async function githubCallback(req: Request, res: Response): Promise<void>
   try { platform = JSON.parse(Buffer.from(state, 'base64url').toString()).platform ?? 'web'; } catch (_) {}
 
   const redirect = (params: Record<string, string>) => {
-    const qs = new URLSearchParams(params).toString();
     if (platform === 'mobile') {
-      return res.redirect(`vidmez://oauth/callback?${qs}`);
+      return res.redirect(`vidmez://oauth/callback?${new URLSearchParams(params).toString()}`);
     }
-    return res.redirect(`${frontendUrl}/oauth-callback.html?${qs}`);
+    // Web: full-page redirect — prefix with oauth_ so Flutter initialize() picks them up
+    const webParams = Object.fromEntries(Object.entries(params).map(([k, v]) => [`oauth_${k}`, v]));
+    return res.redirect(`${frontendUrl}/?${new URLSearchParams(webParams).toString()}`);
   };
 
   if (!code) { redirect({ error: 'No authorisation code received' }); return; }

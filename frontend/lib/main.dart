@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/video_provider.dart';
 import 'screens/home/home_screen.dart';
+import 'screens/auth/oauth_age_screen.dart';
 
 void main() {
   runApp(const VidMezApp());
@@ -69,16 +70,19 @@ class _AppRouter extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<AuthProvider>(
       builder: (context, auth, _) {
-        switch (auth.status) {
-          case AuthStatus.unknown:
-            return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            );
-          case AuthStatus.authenticated:
-            return const HomeScreen();
-          case AuthStatus.unauthenticated:
-            return const HomeScreen();
+        if (auth.status == AuthStatus.unknown) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
         }
+        // Web OAuth: new user redirected back with pending token — collect age
+        if (auth.oauthPending != null) {
+          return OAuthAgeScreen(
+            pendingToken: auth.oauthPending!.pendingToken,
+            email: auth.oauthPending!.email,
+          );
+        }
+        return const HomeScreen();
       },
     );
   }
