@@ -36,6 +36,8 @@ jobs:
           rm -f android/gradlew android/gradlew.bat
           flutter create --platforms=android .
           chmod +x android/gradlew
+          # Ensure Kotlin version is compatible with latest plugins (package_info_plus 9+ needs 2.x)
+          sed -i 's/id "org.jetbrains.kotlin.android" version "[^"]*"/id "org.jetbrains.kotlin.android" version "2.1.0"/' android/settings.gradle
 
       - name: Write google-services.json
         env:
