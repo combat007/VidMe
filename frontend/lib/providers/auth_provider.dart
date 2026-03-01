@@ -110,7 +110,7 @@ class AuthProvider extends ChangeNotifier {
       if (kIsWeb) {
         // Web: server-side redirect flow (identical to GitHub, avoids idToken issues)
         final url = '${ApiConfig.baseUrl}/api/auth/google?platform=web';
-        final callbackScheme = '${Uri.base.origin}/oauth-callback.html';
+        const callbackScheme = 'https'; // flutter_web_auth_2 requires a plain scheme
 
         final resultUrl = await FlutterWebAuth2.authenticate(
           url: url,
@@ -172,9 +172,9 @@ class AuthProvider extends ChangeNotifier {
 
       // On web: popup → oauth-callback.html posts back the URL via postMessage
       // On mobile: Chrome Custom Tab → backend redirects to vidmez:// deep link
-      final callbackScheme = kIsWeb
-          ? '${Uri.base.origin}/oauth-callback.html'
-          : 'vidmez';
+      // flutter_web_auth_2 requires a plain scheme; on web oauth-callback.html
+      // posts back the full https:// URL via postMessage which matches 'https'
+      final callbackScheme = kIsWeb ? 'https' : 'vidmez';
 
       final resultUrl = await FlutterWebAuth2.authenticate(
         url: url,
