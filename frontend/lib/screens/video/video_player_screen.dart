@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:intl/intl.dart';
 import '../../config/api_config.dart';
 import '../../models/video.dart';
@@ -75,13 +76,23 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     _hideTimer?.cancel();
     _controller?.removeListener(_onControllerUpdate);
     _controller?.dispose();
+    WakelockPlus.disable();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     exitBrowserFullscreen();
     super.dispose();
   }
 
   void _onControllerUpdate() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    // Keep screen awake while playing; release lock when paused/ended
+    if (_controller != null) {
+      if (_controller!.value.isPlaying) {
+        WakelockPlus.enable();
+      } else {
+        WakelockPlus.disable();
+      }
+    }
+    setState(() {});
   }
 
   // ─────────────────────────────────────────────────────────────
