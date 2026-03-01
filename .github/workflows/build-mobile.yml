@@ -48,6 +48,23 @@ jobs:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: printf '%s' "$GOOGLE_SERVICES_JSON" | base64 --decode > frontend/android/app/google-services.json
 
+      - name: Write release keystore
+        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+        run: |
+          mkdir -p frontend/android/keystore
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > frontend/android/keystore/release.jks
+          cat > frontend/android/key.properties <<EOF
+          storePassword=$STORE_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=$KEY_ALIAS
+          storeFile=../keystore/release.jks
+          EOF
+
       - name: Build APK
         working-directory: ./frontend
         run: |

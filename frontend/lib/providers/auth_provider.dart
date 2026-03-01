@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
+import 'package:app_links/app_links.dart';
 import '../config/api_config.dart';
 import '../models/user.dart';
 import '../services/api_service.dart';
@@ -87,6 +88,35 @@ class AuthProvider extends ChangeNotifier {
         return;
       }
     }
+
+    // Mobile: check if app was launched via OAuth deep link
+    // (handles the case where the OS killed the app during the OAuth flow so
+    //  FlutterWebAuth2.authenticate() never resolved in the old process)
+    try {
+      final uri = await AppLinks().getInitialLink();
+      if (uri != null && uri.scheme == 'vidmez') {
+        final params = uri.queryParameters;
+        if (params.containsKey('token')) {
+          await _storeAndFetch(params['token']!);
+          return;
+        }
+        if (params.containsKey('pending')) {
+          _oauthPending = OAuthPendingData(
+            pendingToken: params['pending']!,
+            email: params['email'] ?? '',
+          );
+          _status = AuthStatus.unauthenticated;
+          notifyListeners();
+          return;
+        }
+        if (params.containsKey('error')) {
+          _error = params['error'];
+          _status = AuthStatus.unauthenticated;
+          notifyListeners();
+          return;
+        }
+      }
+    } catch (_) {}
 
     // Normal init: restore session from stored token
     final token = await StorageService.getToken();

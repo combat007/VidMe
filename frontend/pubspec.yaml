@@ -43,6 +43,9 @@ dependencies:
   # OAuth — GitHub (browser-based flow, works on Android, iOS, Web)
   flutter_web_auth_2: ^4.0.0
 
+  # Deep link handling — catches vidmez:// launch intent when OS killed app during OAuth
+  app_links: ^6.0.0
+
   # Icons
   cupertino_icons: ^1.0.6
 
