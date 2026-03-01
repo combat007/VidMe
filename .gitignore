@@ -27,6 +27,7 @@ frontend/android/key.properties
 frontend/android/**/*.jks
 frontend/android/**/*.keystore
 frontend/android/GeneratedPluginRegistrant.java
+frontend/android/app/google-services.json
 
 # iOS
 frontend/ios/.symlinks/

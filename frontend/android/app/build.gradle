@@ -3,6 +3,7 @@ plugins {
     id "kotlin-android"
     // Flutter plugin applied via settings.gradle
     id "dev.flutter.flutter-gradle-plugin"
+    id "com.google.gms.google-services"
 }
 
 def localProperties = new Properties()
