@@ -34,6 +34,15 @@ dependencies:
   # Screen wake lock (prevent sleep during video playback)
   wakelock_plus: ^1.2.8
 
+  # OAuth — Google Sign-In
+  # Android: needs google-services.json + SHA-1 in Google Cloud Console
+  # iOS: needs GoogleService-Info.plist + REVERSED_CLIENT_ID URL scheme
+  # Web: needs GOOGLE_CLIENT_ID meta tag in index.html (added below)
+  google_sign_in: ^6.2.1
+
+  # OAuth — GitHub (browser-based flow, works on Android, iOS, Web)
+  flutter_web_auth_2: ^4.0.0
+
   # Icons
   cupertino_icons: ^1.0.6
 

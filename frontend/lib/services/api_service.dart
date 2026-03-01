@@ -43,7 +43,29 @@ class ApiService {
     }
   }
 
-  // Auth
+  // ── OAuth ──────────────────────────────────────────────────────────────────
+
+  /// Verify a Google ID token on the backend.
+  /// Returns { token, user } for existing users, or { needsAge, pendingToken, email } for new ones.
+  static Future<Map<String, dynamic>> googleAuth({required String idToken}) async {
+    return _handleRequest<Map<String, dynamic>>(
+      _dio.post('/api/auth/google', data: {'idToken': idToken}),
+    );
+  }
+
+  /// Complete OAuth sign-up by supplying the user's age.
+  /// Returns { token, user }.
+  static Future<Map<String, dynamic>> oauthComplete({
+    required String pendingToken,
+    required int age,
+  }) async {
+    return _handleRequest<Map<String, dynamic>>(
+      _dio.post('/api/auth/oauth/complete', data: {'pendingToken': pendingToken, 'age': age}),
+    );
+  }
+
+  // ── Auth ───────────────────────────────────────────────────────────────────
+
   static Future<Map<String, dynamic>> getCaptcha() async {
     return _handleRequest<Map<String, dynamic>>(
       _dio.get('/api/auth/captcha'),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/math_captcha.dart';
+import 'oauth_age_screen.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -17,6 +18,7 @@ class _SignupScreenState extends State<SignupScreen> {
   final _ageController = TextEditingController();
   bool _obscurePassword = true;
   bool _loading = false;
+  bool _oauthLoading = false;
 
   String? _captchaId;
   int? _captchaAnswer;
@@ -39,7 +41,6 @@ class _SignupScreenState extends State<SignupScreen> {
     }
 
     setState(() => _loading = true);
-
     final auth = context.read<AuthProvider>();
     final ok = await auth.signup(
       email: _emailController.text.trim(),
@@ -49,14 +50,76 @@ class _SignupScreenState extends State<SignupScreen> {
       captchaAnswer: _captchaAnswer!,
     );
 
-    if (mounted && !ok) {
-      setState(() => _loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+    if (mounted) {
+      if (ok) {
+        Navigator.of(context).popUntil((r) => r.isFirst);
+      } else {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(auth.error ?? 'Signup failed'),
           backgroundColor: Colors.red[700],
+        ));
+      }
+    }
+  }
+
+  Future<void> _signupWithGoogle() async {
+    setState(() => _oauthLoading = true);
+    final auth = context.read<AuthProvider>();
+    final result = await auth.loginWithGoogle();
+    if (!mounted) return;
+    setState(() => _oauthLoading = false);
+
+    if (result == null) {
+      if (auth.error != null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(auth.error!),
+          backgroundColor: Colors.red[700],
+        ));
+      }
+      return;
+    }
+
+    if (result.needsAge) {
+      await Navigator.push(context, MaterialPageRoute(
+        builder: (_) => OAuthAgeScreen(
+          pendingToken: result.pendingToken!,
+          email: result.email ?? '',
         ),
-      );
+      ));
+    }
+    if (mounted && auth.isAuthenticated) {
+      Navigator.of(context).popUntil((r) => r.isFirst);
+    }
+  }
+
+  Future<void> _signupWithGitHub() async {
+    setState(() => _oauthLoading = true);
+    final auth = context.read<AuthProvider>();
+    final result = await auth.loginWithGitHub();
+    if (!mounted) return;
+    setState(() => _oauthLoading = false);
+
+    if (result == null) {
+      if (auth.error != null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(auth.error!),
+          backgroundColor: Colors.red[700],
+        ));
+      }
+      return;
+    }
+
+    if (result.needsAge) {
+      await Navigator.push(context, MaterialPageRoute(
+        builder: (_) => OAuthAgeScreen(
+          pendingToken: result.pendingToken!,
+          email: result.email ?? '',
+        ),
+      ));
+    }
+    if (mounted && auth.isAuthenticated) {
+      Navigator.of(context).popUntil((r) => r.isFirst);
     }
   }
 
@@ -78,7 +141,36 @@ class _SignupScreenState extends State<SignupScreen> {
                         size: 56, color: Color(0xFF1E88E5)),
                     const SizedBox(height: 24),
 
-                    // Email
+                    // ── OAuth buttons ────────────────────────────────────
+                    _OAuthButton(
+                      label: 'Continue with Google',
+                      icon: _GoogleIcon(),
+                      loading: _oauthLoading,
+                      onPressed: _signupWithGoogle,
+                    ),
+                    const SizedBox(height: 12),
+                    _OAuthButton(
+                      label: 'Continue with GitHub',
+                      icon: _GitHubIcon(),
+                      loading: _oauthLoading,
+                      onPressed: _signupWithGitHub,
+                    ),
+
+                    // ── divider ──────────────────────────────────────────
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      child: Row(children: [
+                        Expanded(child: Divider(color: Colors.grey[700])),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Text('or sign up with email',
+                              style: TextStyle(color: Colors.grey[500], fontSize: 13)),
+                        ),
+                        Expanded(child: Divider(color: Colors.grey[700])),
+                      ]),
+                    ),
+
+                    // ── Email ────────────────────────────────────────────
                     TextFormField(
                       controller: _emailController,
                       keyboardType: TextInputType.emailAddress,
@@ -95,7 +187,7 @@ class _SignupScreenState extends State<SignupScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Password
+                    // ── Password ─────────────────────────────────────────
                     TextFormField(
                       controller: _passwordController,
                       obscureText: _obscurePassword,
@@ -119,7 +211,7 @@ class _SignupScreenState extends State<SignupScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Age
+                    // ── Age ──────────────────────────────────────────────
                     TextFormField(
                       controller: _ageController,
                       keyboardType: TextInputType.number,
@@ -139,7 +231,7 @@ class _SignupScreenState extends State<SignupScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Captcha
+                    // ── Captcha ──────────────────────────────────────────
                     MathCaptcha(
                       onChanged: (id, answer) {
                         _captchaId = id;
@@ -148,20 +240,16 @@ class _SignupScreenState extends State<SignupScreen> {
                     ),
                     const SizedBox(height: 24),
 
-                    // Signup button
                     ElevatedButton(
                       onPressed: _loading ? null : _signup,
                       child: _loading
                           ? const SizedBox(
-                              height: 20,
-                              width: 20,
+                              height: 20, width: 20,
                               child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: Colors.white),
-                            )
+                                  strokeWidth: 2, color: Colors.white))
                           : const Text('Create Account'),
                     ),
                     const SizedBox(height: 16),
-
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -182,4 +270,76 @@ class _SignupScreenState extends State<SignupScreen> {
       ),
     );
   }
+}
+
+// ── reused widgets (same as login_screen) ─────────────────────────────────────
+
+class _OAuthButton extends StatelessWidget {
+  final String label;
+  final Widget icon;
+  final bool loading;
+  final VoidCallback onPressed;
+
+  const _OAuthButton({
+    required this.label,
+    required this.icon,
+    required this.loading,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 48,
+      child: OutlinedButton(
+        onPressed: loading ? null : onPressed,
+        style: OutlinedButton.styleFrom(
+          side: BorderSide(color: Colors.grey[700]!),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            icon,
+            const SizedBox(width: 10),
+            Text(label, style: const TextStyle(color: Colors.white, fontSize: 15)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GoogleIcon extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) => const SizedBox(
+        width: 20,
+        height: 20,
+        child: Center(
+          child: Text('G',
+              style: TextStyle(
+                  color: Color(0xFFDB4437),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                  height: 1)),
+        ),
+      );
+}
+
+class _GitHubIcon extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 20,
+        height: 20,
+        decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+        child: const Center(
+          child: Text('GH',
+              style: TextStyle(
+                  color: Colors.black,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 7,
+                  height: 1)),
+        ),
+      );
 }

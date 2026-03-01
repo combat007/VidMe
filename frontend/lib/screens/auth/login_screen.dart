@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import 'signup_screen.dart';
 import 'forgot_password_screen.dart';
+import 'oauth_age_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -17,6 +18,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _loading = false;
+  bool _oauthLoading = false;
 
   @override
   void dispose() {
@@ -40,14 +42,68 @@ class _LoginScreenState extends State<LoginScreen> {
         Navigator.pop(context);
       } else {
         setState(() => _loading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(auth.error ?? 'Login failed'),
-            backgroundColor: Colors.red[700],
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(auth.error ?? 'Login failed'),
+          backgroundColor: Colors.red[700],
+        ));
       }
     }
+  }
+
+  Future<void> _loginWithGoogle() async {
+    setState(() => _oauthLoading = true);
+    final auth = context.read<AuthProvider>();
+    final result = await auth.loginWithGoogle();
+    if (!mounted) return;
+    setState(() => _oauthLoading = false);
+
+    if (result == null) {
+      if (auth.error != null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(auth.error!),
+          backgroundColor: Colors.red[700],
+        ));
+      }
+      return;
+    }
+
+    if (result.needsAge) {
+      await Navigator.push(context, MaterialPageRoute(
+        builder: (_) => OAuthAgeScreen(
+          pendingToken: result.pendingToken!,
+          email: result.email ?? '',
+        ),
+      ));
+    }
+    if (mounted && auth.isAuthenticated) Navigator.pop(context);
+  }
+
+  Future<void> _loginWithGitHub() async {
+    setState(() => _oauthLoading = true);
+    final auth = context.read<AuthProvider>();
+    final result = await auth.loginWithGitHub();
+    if (!mounted) return;
+    setState(() => _oauthLoading = false);
+
+    if (result == null) {
+      if (auth.error != null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(auth.error!),
+          backgroundColor: Colors.red[700],
+        ));
+      }
+      return;
+    }
+
+    if (result.needsAge) {
+      await Navigator.push(context, MaterialPageRoute(
+        builder: (_) => OAuthAgeScreen(
+          pendingToken: result.pendingToken!,
+          email: result.email ?? '',
+        ),
+      ));
+    }
+    if (mounted && auth.isAuthenticated) Navigator.pop(context);
   }
 
   @override
@@ -68,22 +124,46 @@ class _LoginScreenState extends State<LoginScreen> {
                     const Icon(Icons.play_circle_filled,
                         size: 72, color: Color(0xFF1E88E5)),
                     const SizedBox(height: 8),
-                    const Text(
-                      'VidMez',
-                      style: TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
+                    const Text('VidMez',
+                        style: TextStyle(
+                            fontSize: 32,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white)),
                     const SizedBox(height: 8),
-                    Text(
-                      'Share your world',
-                      style: TextStyle(color: Colors.grey[400], fontSize: 16),
-                    ),
-                    const SizedBox(height: 40),
+                    Text('Share your world',
+                        style: TextStyle(color: Colors.grey[400], fontSize: 16)),
+                    const SizedBox(height: 32),
 
-                    // Email
+                    // ── OAuth buttons ──────────────────────────────────────
+                    _OAuthButton(
+                      label: 'Continue with Google',
+                      icon: _GoogleIcon(),
+                      loading: _oauthLoading,
+                      onPressed: _loginWithGoogle,
+                    ),
+                    const SizedBox(height: 12),
+                    _OAuthButton(
+                      label: 'Continue with GitHub',
+                      icon: _GitHubIcon(),
+                      loading: _oauthLoading,
+                      onPressed: _loginWithGitHub,
+                    ),
+
+                    // ── divider ────────────────────────────────────────────
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      child: Row(children: [
+                        Expanded(child: Divider(color: Colors.grey[700])),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Text('or sign in with email',
+                              style: TextStyle(color: Colors.grey[500], fontSize: 13)),
+                        ),
+                        Expanded(child: Divider(color: Colors.grey[700])),
+                      ]),
+                    ),
+
+                    // ── Email / password ───────────────────────────────────
                     TextFormField(
                       controller: _emailController,
                       keyboardType: TextInputType.emailAddress,
@@ -99,8 +179,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       },
                     ),
                     const SizedBox(height: 16),
-
-                    // Password
                     TextFormField(
                       controller: _passwordController,
                       obscureText: _obscurePassword,
@@ -121,48 +199,33 @@ class _LoginScreenState extends State<LoginScreen> {
                         return null;
                       },
                     ),
-                    const SizedBox(height: 24),
-
-                    // Forgot password link
+                    const SizedBox(height: 8),
                     Align(
                       alignment: Alignment.centerRight,
                       child: TextButton(
-                        onPressed: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) => const ForgotPasswordScreen()),
-                        ),
+                        onPressed: () => Navigator.push(context,
+                            MaterialPageRoute(builder: (_) => const ForgotPasswordScreen())),
                         child: const Text('Forgot password?'),
                       ),
                     ),
                     const SizedBox(height: 8),
-
-                    // Login button
                     ElevatedButton(
                       onPressed: _loading ? null : _login,
                       child: _loading
                           ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: Colors.white),
-                            )
+                              height: 20, width: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                           : const Text('Log In'),
                     ),
                     const SizedBox(height: 16),
-
-                    // Sign up link
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text("Don't have an account?",
                             style: TextStyle(color: Colors.grey[400])),
                         TextButton(
-                          onPressed: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const SignupScreen()),
-                          ),
+                          onPressed: () => Navigator.push(context,
+                              MaterialPageRoute(builder: (_) => const SignupScreen())),
                           child: const Text('Sign Up'),
                         ),
                       ],
@@ -173,6 +236,87 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ── shared OAuth button widget ─────────────────────────────────────────────────
+
+class _OAuthButton extends StatelessWidget {
+  final String label;
+  final Widget icon;
+  final bool loading;
+  final VoidCallback onPressed;
+
+  const _OAuthButton({
+    required this.label,
+    required this.icon,
+    required this.loading,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 48,
+      child: OutlinedButton(
+        onPressed: loading ? null : onPressed,
+        style: OutlinedButton.styleFrom(
+          side: BorderSide(color: Colors.grey[700]!),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            icon,
+            const SizedBox(width: 10),
+            Text(label, style: const TextStyle(color: Colors.white, fontSize: 15)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── provider brand icons (no extra package needed) ────────────────────────────
+
+class _GoogleIcon extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox(
+      width: 20,
+      height: 20,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Text('G',
+              style: TextStyle(
+                  color: Color(0xFFDB4437),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                  height: 1)),
+        ],
+      ),
+    );
+  }
+}
+
+class _GitHubIcon extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 20,
+      height: 20,
+      decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+      child: const Center(
+        child: Text('GH',
+            style: TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.bold,
+                fontSize: 7,
+                height: 1)),
       ),
     );
   }

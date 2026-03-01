@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>OAuth Callback</title></head>
+<body>
+<script>
+  // Posts the full callback URL back to the opener (flutter_web_auth_2 popup flow)
+  // then closes this tab/window.
+  if (window.opener) {
+    window.opener.postMessage(window.location.href, window.location.origin);
+  }
+  window.close();
+</script>
+</body>
+</html>

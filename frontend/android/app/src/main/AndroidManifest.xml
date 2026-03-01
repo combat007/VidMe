@@ -44,6 +44,14 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+
+            <!-- OAuth deep-link callback (flutter_web_auth_2) -->
+            <intent-filter android:label="oauth_callback">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="vidmez"/>
+            </intent-filter>
         </activity>
 
         <!-- Provide a FileProvider for file_picker uploads -->
