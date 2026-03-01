@@ -8,11 +8,17 @@ class VideoProvider extends ChangeNotifier {
   bool _hasMore = true;
   int _currentPage = 1;
   String? _error;
+  String _searchQuery = '';
 
   List<Video> get videos => _videos;
   bool get loading => _loading;
   bool get hasMore => _hasMore;
   String? get error => _error;
+
+  void setSearch(String q) {
+    _searchQuery = q;
+    loadVideos(refresh: true);
+  }
 
   Future<void> loadVideos({bool refresh = false}) async {
     if (_loading) return;
@@ -31,6 +37,7 @@ class VideoProvider extends ChangeNotifier {
       final result = await ApiService.listVideos(
         page: _currentPage,
         limit: 20,
+        search: _searchQuery.isNotEmpty ? _searchQuery : null,
       );
 
       final rawVideos = result['videos'] as List<dynamic>;

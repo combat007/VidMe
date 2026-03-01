@@ -125,10 +125,36 @@ export async function createVideo(req: AuthRequest, res: Response): Promise<void
   }
 }
 
+export async function searchSuggestions(req: AuthRequest, res: Response): Promise<void> {
+  const q = ((req.query.q as string) || '').trim();
+  if (!q) {
+    res.json([]);
+    return;
+  }
+
+  try {
+    const videos = await prisma.video.findMany({
+      where: {
+        status: 'PUBLISHED',
+        blocked: false,
+        title: { contains: q, mode: 'insensitive' },
+      },
+      select: { id: true, title: true },
+      take: 6,
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(videos);
+  } catch (err) {
+    console.error('Search suggestions error:', err);
+    res.status(500).json({ error: 'Failed to fetch suggestions' });
+  }
+}
+
 export async function listVideos(req: AuthRequest, res: Response): Promise<void> {
   const page = Math.max(1, Number(req.query.page) || 1);
   const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
   const filter18plus = req.query.filter18plus === 'true';
+  const search = ((req.query.search as string) || '').trim();
 
   try {
     // Get current user's age for 18+ filtering
@@ -143,6 +169,14 @@ export async function listVideos(req: AuthRequest, res: Response): Promise<void>
     // Hide 18+ content if user is not authenticated or underage
     if (filter18plus || userAge === null || userAge < 18) {
       where['is18Plus'] = false;
+    }
+
+    // Full-text search on title and description
+    if (search) {
+      where['OR'] = [
+        { title: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+      ];
     }
 
     const [videos, total] = await Promise.all([

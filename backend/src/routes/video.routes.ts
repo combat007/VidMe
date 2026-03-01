@@ -9,9 +9,13 @@ import {
   getVideo,
   updateVideo,
   deleteVideo,
+  searchSuggestions,
 } from '../controllers/video.controller';
 
 const router = Router();
+
+// Suggestions (must be before /:id to avoid route conflict)
+router.get('/suggestions', (req, res) => searchSuggestions(req as any, res));
 
 // Public (with optional auth for 18+ filtering)
 router.get('/', (req, res, next) => {

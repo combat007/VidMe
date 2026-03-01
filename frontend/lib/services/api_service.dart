@@ -93,6 +93,7 @@ class ApiService {
     int page = 1,
     int limit = 20,
     bool filter18plus = false,
+    String? search,
   }) async {
     final headers = await _authHeaders();
     return _handleRequest<Map<String, dynamic>>(
@@ -100,8 +101,16 @@ class ApiService {
         'page': page,
         'limit': limit,
         'filter18plus': filter18plus,
+        if (search != null && search.isNotEmpty) 'search': search,
       }, options: Options(headers: headers)),
     );
+  }
+
+  static Future<List<Map<String, dynamic>>> getSearchSuggestions(String q) async {
+    final data = await _handleRequest<List<dynamic>>(
+      _dio.get('/api/videos/suggestions', queryParameters: {'q': q}),
+    );
+    return data.cast<Map<String, dynamic>>();
   }
 
   static Future<Video> getVideo(String id) async {

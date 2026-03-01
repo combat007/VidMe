@@ -1,12 +1,15 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/video_provider.dart';
+import '../../services/api_service.dart';
 import '../../widgets/video_card.dart';
 import '../upload/upload_screen.dart';
 import '../video/video_player_screen.dart';
 import '../admin/admin_panel_screen.dart';
 import '../auth/change_password_screen.dart';
+import '../auth/login_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -17,6 +20,13 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _scrollController = ScrollController();
+
+  // Search state
+  bool _searchActive = false;
+  final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
+  List<Map<String, dynamic>> _suggestions = [];
+  Timer? _debounce;
 
   @override
   void initState() {
@@ -30,6 +40,9 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _scrollController.dispose();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    _debounce?.cancel();
     super.dispose();
   }
 
@@ -44,6 +57,51 @@ class _HomeScreenState extends State<HomeScreen> {
     await context.read<VideoProvider>().loadVideos(refresh: true);
   }
 
+  void _activateSearch() {
+    setState(() => _searchActive = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _searchFocusNode.requestFocus();
+    });
+  }
+
+  void _onSearchChanged(String query) {
+    _debounce?.cancel();
+    if (query.isEmpty) {
+      setState(() => _suggestions = []);
+      context.read<VideoProvider>().setSearch('');
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 300), () async {
+      try {
+        final results = await ApiService.getSearchSuggestions(query);
+        if (mounted) setState(() => _suggestions = results);
+      } catch (_) {}
+    });
+  }
+
+  void _submitSearch(String query) {
+    _debounce?.cancel();
+    setState(() => _suggestions = []);
+    context.read<VideoProvider>().setSearch(query);
+    _searchFocusNode.unfocus();
+  }
+
+  void _selectSuggestion(Map<String, dynamic> suggestion) {
+    final title = suggestion['title'] as String;
+    _searchController.text = title;
+    _submitSearch(title);
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    _debounce?.cancel();
+    setState(() {
+      _suggestions = [];
+      _searchActive = false;
+    });
+    context.read<VideoProvider>().setSearch('');
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
@@ -51,94 +109,154 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Row(
-          children: [
-            Icon(Icons.play_circle_filled, color: Color(0xFF1E88E5)),
-            SizedBox(width: 8),
-            Text('VidMe', style: TextStyle(fontWeight: FontWeight.bold)),
-          ],
-        ),
+        title: _searchActive
+            ? TextField(
+                controller: _searchController,
+                focusNode: _searchFocusNode,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  hintText: 'Search videos...',
+                  hintStyle: TextStyle(color: Colors.white54),
+                  border: InputBorder.none,
+                  filled: false,
+                ),
+                onChanged: _onSearchChanged,
+                onSubmitted: _submitSearch,
+              )
+            : const Row(
+                children: [
+                  Icon(Icons.play_circle_filled, color: Color(0xFF1E88E5)),
+                  SizedBox(width: 8),
+                  Text('VidMez', style: TextStyle(fontWeight: FontWeight.bold)),
+                ],
+              ),
         actions: [
-          if (auth.isAuthenticated) ...[
-            if (auth.isAdmin)
+          if (_searchActive)
+            IconButton(
+              icon: const Icon(Icons.close),
+              tooltip: 'Cancel search',
+              onPressed: _clearSearch,
+            )
+          else ...[
+            IconButton(
+              icon: const Icon(Icons.search),
+              tooltip: 'Search',
+              onPressed: _activateSearch,
+            ),
+            if (auth.isAuthenticated) ...[
+              if (auth.isAdmin)
+                IconButton(
+                  icon: const Icon(Icons.admin_panel_settings,
+                      color: Color(0xFFFFB300)),
+                  tooltip: 'Admin Panel',
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AdminPanelScreen()),
+                  ).then((_) => _refresh()),
+                ),
               IconButton(
-                icon: const Icon(Icons.admin_panel_settings, color: Color(0xFFFFB300)),
-                tooltip: 'Admin Panel',
+                icon: const Icon(Icons.upload_rounded),
+                tooltip: 'Upload video',
                 onPressed: () => Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const AdminPanelScreen()),
+                  MaterialPageRoute(builder: (_) => const UploadScreen()),
                 ).then((_) => _refresh()),
               ),
-            IconButton(
-              icon: const Icon(Icons.upload_rounded),
-              tooltip: 'Upload video',
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const UploadScreen()),
-              ).then((_) => _refresh()),
-            ),
-            PopupMenuButton<String>(
-              icon: CircleAvatar(
-                radius: 16,
-                backgroundColor: const Color(0xFF1E88E5),
-                child: Text(
-                  auth.user!.email[0].toUpperCase(),
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                ),
-              ),
-              onSelected: (value) {
-                if (value == 'logout') {
-                  auth.logout();
-                } else if (value == 'change_password') {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const ChangePasswordScreen()),
-                  );
-                }
-              },
-              itemBuilder: (_) => [
-                PopupMenuItem(
-                  enabled: false,
+              PopupMenuButton<String>(
+                icon: CircleAvatar(
+                  radius: 16,
+                  backgroundColor: const Color(0xFF1E88E5),
                   child: Text(
-                    auth.user!.email,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+                    auth.user!.email[0].toUpperCase(),
+                    style: const TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.bold),
                   ),
                 ),
-                const PopupMenuDivider(),
-                const PopupMenuItem(
-                  value: 'logout',
-                  child: Row(
-                    children: [
-                      Icon(Icons.logout, size: 18),
-                      SizedBox(width: 8),
-                      Text('Log Out'),
-                    ],
+                onSelected: (value) {
+                  if (value == 'logout') {
+                    auth.logout();
+                  } else if (value == 'change_password') {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const ChangePasswordScreen()),
+                    );
+                  }
+                },
+                itemBuilder: (_) => [
+                  PopupMenuItem(
+                    enabled: false,
+                    child: Text(
+                      auth.user!.email,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
                   ),
-                ),
-                const PopupMenuItem(
-                  value: 'change_password',
-                  child: Row(
-                    children: [
-                      Icon(Icons.lock_reset, size: 18),
-                      SizedBox(width: 8),
-                      Text('Change Password'),
-                    ],
+                  const PopupMenuDivider(),
+                  const PopupMenuItem(
+                    value: 'logout',
+                    child: Row(
+                      children: [
+                        Icon(Icons.logout, size: 18),
+                        SizedBox(width: 8),
+                        Text('Log Out'),
+                      ],
+                    ),
                   ),
+                  const PopupMenuItem(
+                    value: 'change_password',
+                    child: Row(
+                      children: [
+                        Icon(Icons.lock_reset, size: 18),
+                        SizedBox(width: 8),
+                        Text('Change Password'),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ] else
+              TextButton(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const LoginScreen()),
                 ),
-              ],
-            ),
-          ] else
-            TextButton(
-              onPressed: () {},
-              child: const Text('Log In'),
-            ),
-          const SizedBox(width: 8),
+                child: const Text('Log In'),
+              ),
+            const SizedBox(width: 8),
+          ],
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _refresh,
-        child: _buildBody(videoProvider),
+      body: Stack(
+        children: [
+          RefreshIndicator(
+            onRefresh: _refresh,
+            child: _buildBody(videoProvider),
+          ),
+          if (_searchActive && _suggestions.isNotEmpty)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Material(
+                elevation: 8,
+                color: const Color(0xFF2A2A2A),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: _suggestions
+                      .map((s) => ListTile(
+                            leading:
+                                const Icon(Icons.search, color: Colors.grey),
+                            title: Text(
+                              s['title'] as String,
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                            onTap: () => _selectSuggestion(s),
+                          ))
+                      .toList(),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -155,7 +273,8 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             const Icon(Icons.error_outline, size: 48, color: Colors.red),
             const SizedBox(height: 16),
-            Text(videoProvider.error!, style: const TextStyle(color: Colors.white)),
+            Text(videoProvider.error!,
+                style: const TextStyle(color: Colors.white)),
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: _refresh,
@@ -189,7 +308,8 @@ class _HomeScreenState extends State<HomeScreen> {
         crossAxisSpacing: 12,
         mainAxisSpacing: 12,
       ),
-      itemCount: videoProvider.videos.length + (videoProvider.hasMore ? 1 : 0),
+      itemCount:
+          videoProvider.videos.length + (videoProvider.hasMore ? 1 : 0),
       itemBuilder: (context, index) {
         if (index >= videoProvider.videos.length) {
           return const Center(child: CircularProgressIndicator());

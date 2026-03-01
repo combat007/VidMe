@@ -2,15 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/video_provider.dart';
-import 'screens/auth/login_screen.dart';
 import 'screens/home/home_screen.dart';
 
 void main() {
-  runApp(const VidMeApp());
+  runApp(const VidMezApp());
 }
 
-class VidMeApp extends StatelessWidget {
-  const VidMeApp({super.key});
+class VidMezApp extends StatelessWidget {
+  const VidMezApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -20,7 +19,7 @@ class VidMeApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => VideoProvider()),
       ],
       child: MaterialApp(
-        title: 'VidMe',
+        title: 'VidMez',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(
@@ -78,7 +77,7 @@ class _AppRouter extends StatelessWidget {
           case AuthStatus.authenticated:
             return const HomeScreen();
           case AuthStatus.unauthenticated:
-            return const LoginScreen();
+            return const HomeScreen();
         }
       },
     );

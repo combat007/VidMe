@@ -1,11 +1,11 @@
 {
-    "name": "VidMe",
-    "short_name": "VidMe",
+    "name": "VidMez",
+    "short_name": "VidMez",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0F0F0F",
     "theme_color": "#1E88E5",
-    "description": "VidMe — Share your world",
+    "description": "VidMez — Share your world",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

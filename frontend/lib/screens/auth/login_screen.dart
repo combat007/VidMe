@@ -35,14 +35,18 @@ class _LoginScreenState extends State<LoginScreen> {
       _passwordController.text,
     );
 
-    if (mounted && !ok) {
-      setState(() => _loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(auth.error ?? 'Login failed'),
-          backgroundColor: Colors.red[700],
-        ),
-      );
+    if (mounted) {
+      if (ok) {
+        Navigator.pop(context);
+      } else {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(auth.error ?? 'Login failed'),
+            backgroundColor: Colors.red[700],
+          ),
+        );
+      }
     }
   }
 
@@ -65,7 +69,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         size: 72, color: Color(0xFF1E88E5)),
                     const SizedBox(height: 8),
                     const Text(
-                      'VidMe',
+                      'VidMez',
                       style: TextStyle(
                         fontSize: 32,
                         fontWeight: FontWeight.bold,
