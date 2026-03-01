@@ -25,6 +25,7 @@ class _UploadScreenState extends State<UploadScreen> {
   String? _gatewayUrl;
   int? _duration;
   double _uploadProgress = 0;
+  bool _isProcessing = false; // true after 100% send, waiting for server
   String? _uploadError;
 
   // Thumbnail
@@ -81,6 +82,7 @@ class _UploadScreenState extends State<UploadScreen> {
     setState(() {
       _step = 1;
       _uploadProgress = 0;
+      _isProcessing = false;
       _uploadError = null;
     });
 
@@ -90,7 +92,11 @@ class _UploadScreenState extends State<UploadScreen> {
         _pickedFile!.name,
         onProgress: (sent, total) {
           if (total > 0) {
-            setState(() => _uploadProgress = sent / total);
+            final progress = sent / total;
+            setState(() {
+              _uploadProgress = progress;
+              _isProcessing = progress >= 1.0;
+            });
           }
         },
       );
@@ -251,26 +257,54 @@ class _UploadScreenState extends State<UploadScreen> {
   Widget _buildUploadingStep() {
     return Column(
       children: [
-        const SizedBox(height: 40),
-        const Icon(Icons.cloud_upload, size: 64, color: Color(0xFF1E88E5)),
-        const SizedBox(height: 24),
-        const Text(
-          'Uploading to IPFS...',
-          style: TextStyle(color: Colors.white, fontSize: 18),
+        const SizedBox(height: 60),
+        Stack(
+          alignment: Alignment.center,
+          children: [
+            SizedBox(
+              width: 96,
+              height: 96,
+              child: CircularProgressIndicator(
+                value: _isProcessing ? null : (_uploadProgress > 0 ? _uploadProgress : null),
+                strokeWidth: 5,
+                backgroundColor: const Color(0xFF2A2A2A),
+                valueColor: const AlwaysStoppedAnimation(Color(0xFF1E88E5)),
+              ),
+            ),
+            Icon(
+              _isProcessing ? Icons.settings : Icons.cloud_upload,
+              size: 40,
+              color: const Color(0xFF1E88E5),
+            ),
+          ],
         ),
-        const SizedBox(height: 24),
-        LinearProgressIndicator(
-          value: _uploadProgress > 0 ? _uploadProgress : null,
-          backgroundColor: const Color(0xFF2A2A2A),
-          valueColor: const AlwaysStoppedAnimation(Color(0xFF1E88E5)),
-        ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 32),
         Text(
-          _uploadProgress > 0
-              ? '${(_uploadProgress * 100).toStringAsFixed(0)}%'
-              : 'Processing...',
-          style: const TextStyle(color: Colors.grey),
+          _isProcessing ? 'Processing video...' : 'Uploading...',
+          style: const TextStyle(
+              color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
         ),
+        const SizedBox(height: 8),
+        Text(
+          _isProcessing
+              ? 'Generating thumbnail and saving — this may take a minute'
+              : _uploadProgress > 0
+                  ? '${(_uploadProgress * 100).toStringAsFixed(0)}% uploaded'
+                  : 'Starting upload...',
+          style: const TextStyle(color: Colors.grey, fontSize: 13),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 32),
+        if (!_isProcessing && _uploadProgress > 0)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: LinearProgressIndicator(
+              value: _uploadProgress,
+              backgroundColor: const Color(0xFF2A2A2A),
+              valueColor: const AlwaysStoppedAnimation(Color(0xFF1E88E5)),
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
       ],
     );
   }

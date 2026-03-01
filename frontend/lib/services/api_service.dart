@@ -22,6 +22,13 @@ class ApiService {
     receiveTimeout: const Duration(minutes: 5),
   ));
 
+  // Separate long-timeout client for video uploads (IPFS pin can take 20+ min)
+  static final Dio _uploadDio = Dio(BaseOptions(
+    baseUrl: ApiConfig.baseUrl,
+    connectTimeout: const Duration(seconds: 30),
+    receiveTimeout: const Duration(minutes: 30),
+  ));
+
   static Future<Map<String, String>> _authHeaders() async {
     final token = await StorageService.getToken();
     if (token != null) {
@@ -169,14 +176,21 @@ class ApiService {
     final formData = FormData.fromMap({
       'video': MultipartFile.fromBytes(bytes, filename: filename),
     });
-    return _handleRequest<Map<String, dynamic>>(
-      _dio.post(
+    try {
+      final response = await _uploadDio.post(
         '/api/videos/upload',
         data: formData,
         options: Options(headers: headers),
         onSendProgress: onProgress,
-      ),
-    );
+      );
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      final data = e.response?.data;
+      final msg = (data is Map && data['error'] != null)
+          ? data['error'] as String
+          : e.message ?? 'Upload failed';
+      throw ApiException(msg, e.response?.statusCode);
+    }
   }
 
   static Future<Video> createVideo({
