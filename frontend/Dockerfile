@@ -18,7 +18,10 @@ RUN flutter create --platforms web . 2>/dev/null || true
 # so it works from localhost, LAN IP, or any hostname without rebuilding.
 # Pass --build-arg API_BASE_URL=https://yourserver.com only for production.
 ARG API_BASE_URL
-RUN flutter build web --release ${API_BASE_URL:+--dart-define=API_BASE_URL=$API_BASE_URL}
+ARG GOOGLE_CLIENT_ID
+RUN flutter build web --release \
+    ${API_BASE_URL:+--dart-define=API_BASE_URL=$API_BASE_URL} \
+    ${GOOGLE_CLIENT_ID:+--dart-define=GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID}
 
 # Serve with nginx
 FROM nginx:alpine
