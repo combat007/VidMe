@@ -46,7 +46,7 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: vidme-android-${{ github.sha }}
+          name: vidmez-android-${{ github.sha }}
           path: frontend/build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
 
@@ -76,9 +76,9 @@ jobs:
             /usr/libexec/PlistBuddy -c "Add :$key string '$value'" Info.plist 2>/dev/null || \
             /usr/libexec/PlistBuddy -c "Set :$key '$value'" Info.plist
           }
-          add_plist_key NSPhotoLibraryUsageDescription "VidMe needs access to your photo library to select videos."
-          add_plist_key NSCameraUsageDescription "VidMe needs camera access to record videos."
-          add_plist_key NSMicrophoneUsageDescription "VidMe needs microphone access to record audio with your videos."
+          add_plist_key NSPhotoLibraryUsageDescription "VidMez needs access to your photo library to select videos."
+          add_plist_key NSCameraUsageDescription "VidMez needs camera access to record videos."
+          add_plist_key NSMicrophoneUsageDescription "VidMez needs microphone access to record audio with your videos."
 
       - name: Build iOS (no codesign)
         working-directory: ./frontend
@@ -89,11 +89,11 @@ jobs:
       - name: Package Runner.app as zip
         run: |
           cd frontend/build/ios/iphoneos
-          zip -r vidme-ios.zip Runner.app
+          zip -r vidmez-ios.zip Runner.app
 
       - name: Upload iOS artifact
         uses: actions/upload-artifact@v4
         with:
-          name: vidme-ios-${{ github.sha }}
-          path: frontend/build/ios/iphoneos/vidme-ios.zip
+          name: vidmez-ios-${{ github.sha }}
+          path: frontend/build/ios/iphoneos/vidmez-ios.zip
           retention-days: 30
