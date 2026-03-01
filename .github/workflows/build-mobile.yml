@@ -37,6 +37,9 @@ jobs:
           flutter create --platforms=android .
           chmod +x android/gradlew
 
+      - name: Write google-services.json
+        run: echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 -d > frontend/android/app/google-services.json
+
       - name: Build APK
         working-directory: ./frontend
         run: |
