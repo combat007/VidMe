@@ -1,4 +1,4 @@
-package com.vidme.app
+package com.vidmez.app
 
 import io.flutter.embedding.android.FlutterActivity
 
