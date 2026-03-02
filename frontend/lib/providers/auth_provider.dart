@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:app_links/app_links.dart';
@@ -207,7 +208,11 @@ class AuthProvider extends ChangeNotifier {
         return _handleOAuthResult(result);
       }
     } catch (e) {
-      _error = 'Google sign-in failed: $e';
+      if (e is PlatformException) {
+        _error = 'Google sign-in failed (code: ${e.code}, msg: ${e.message})';
+      } else {
+        _error = 'Google sign-in failed: $e';
+      }
       notifyListeners();
       return null;
     }
