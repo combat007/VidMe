@@ -340,7 +340,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildBody(VideoProvider videoProvider) {
-    if (videoProvider.loading && videoProvider.videos.isEmpty && _ytLoading) {
+    if (videoProvider.loading && videoProvider.videos.isEmpty && _ytVideos.isEmpty && _ytLoading) {
       return const Center(child: CircularProgressIndicator());
     }
 
@@ -527,7 +527,7 @@ class _HomeScreenState extends State<HomeScreen> {
       width: 200,
       margin: const EdgeInsets.only(right: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
+        color: const Color(0xFF2A2A2A),
         borderRadius: BorderRadius.circular(8),
       ),
     );
