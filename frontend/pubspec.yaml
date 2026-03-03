@@ -43,6 +43,9 @@ dependencies:
   # Share content natively (mobile) or via clipboard (web)
   share_plus: ^9.0.0
 
+  # YouTube IFrame player (web + Android + iOS)
+  youtube_player_iframe: ^5.1.1
+
   # Icons
   cupertino_icons: ^1.0.6
 

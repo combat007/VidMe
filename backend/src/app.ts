@@ -10,6 +10,7 @@ import likeRoutes from './routes/like.routes';
 import commentRoutes from './routes/comment.routes';
 import adminRoutes from './routes/admin.routes';
 import bookmarkRoutes from './routes/bookmark.routes';
+import youtubeRoutes from './routes/youtube.routes';
 import { apiLimiter } from './middleware/rate-limit.middleware';
 
 if (!process.env.JWT_SECRET) {
@@ -43,6 +44,7 @@ app.use('/api/videos', likeRoutes);
 app.use('/api/videos', commentRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/bookmarks', bookmarkRoutes);
+app.use('/api/youtube', youtubeRoutes);
 
 // Health check — verifies both Postgres and Redis are reachable
 app.get('/health', async (_req, res) => {

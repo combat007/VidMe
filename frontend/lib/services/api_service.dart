@@ -4,6 +4,7 @@ import '../config/api_config.dart';
 import '../models/user.dart';
 import '../models/video.dart';
 import '../models/comment.dart';
+import '../models/youtube_video.dart';
 import 'storage_service.dart';
 
 class ApiException implements Exception {
@@ -376,5 +377,37 @@ class ApiService {
     await _handleRequest(
       _dio.patch('/api/admin/videos/$id/unblock', options: Options(headers: headers)),
     );
+  }
+
+  // ── YouTube ─────────────────────────────────────────────────────────────────
+
+  static Future<List<YouTubeVideo>> getYouTubeTrending({
+    String regionCode = 'US',
+    int maxResults = 20,
+    String categoryId = '',
+  }) async {
+    final data = await _handleRequest<Map<String, dynamic>>(
+      _dio.get('/api/youtube/trending', queryParameters: {
+        'regionCode': regionCode,
+        'maxResults': maxResults,
+        if (categoryId.isNotEmpty) 'categoryId': categoryId,
+      }),
+    );
+    final items = data['videos'] as List<dynamic>? ?? [];
+    return items
+        .map((e) => YouTubeVideo.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  static Future<List<Map<String, dynamic>>> getYouTubeCategories({
+    String regionCode = 'US',
+  }) async {
+    final data = await _handleRequest<Map<String, dynamic>>(
+      _dio.get('/api/youtube/categories', queryParameters: {
+        'regionCode': regionCode,
+      }),
+    );
+    final items = data['categories'] as List<dynamic>? ?? [];
+    return items.cast<Map<String, dynamic>>();
   }
 }
