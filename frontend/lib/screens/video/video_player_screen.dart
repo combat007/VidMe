@@ -13,6 +13,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../widgets/comment_section.dart';
 import '../../utils/fullscreen_util.dart';
+import '../../utils/web_video_util.dart';
 
 enum _SizeMode { tile, theater, fullscreen }
 
@@ -145,21 +146,25 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   Future<void> _tryAutoplay() async {
     if (!mounted) return;
     if (kIsWeb) {
-      // Mute first, then play — browsers always allow muted autoplay.
-      await _controller!.setVolume(0);
+      // Browsers enforce autoplay by checking videoElement.muted, NOT volume.
+      // setVolume(0) only sets volume=0 which is NOT treated as muted by the
+      // autoplay policy — we must set the DOM property directly.
+      setVideoElementMuted(true);   // <video muted> on the actual DOM element
+      await _controller!.setVolume(0); // keep Flutter's volume state in sync
       setState(() { _muted = true; _autoMuted = true; });
       await _controller!.play();
-      // Wait 600 ms for the browser to confirm playback started.
+      // Give the browser up to 600 ms to honour the play() call.
       await Future.delayed(const Duration(milliseconds: 600));
       if (!mounted) return;
       if (!(_controller?.value.isPlaying ?? false)) {
-        // Even muted autoplay was blocked — restore unmuted state so the
-        // user can tap the play button normally (gesture unlocks autoplay).
+        // Even muted autoplay failed (very rare). Restore state so the user
+        // can tap the play button — a user gesture unlocks autoplay.
+        setVideoElementMuted(false);
         await _controller!.setVolume(_volume);
         setState(() { _muted = false; _autoMuted = false; });
       }
     } else {
-      // Native: no browser autoplay policy — play with sound immediately.
+      // Native Android/iOS: no browser autoplay policy — play with sound.
       _controller!.play();
     }
   }
@@ -277,6 +282,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       final v = _volume > 0 ? _volume : 1.0;
       c.setVolume(v);
       // Also clear _autoMuted so the "Tap to unmute" badge disappears.
+      setVideoElementMuted(false); // restore DOM muted state
       setState(() { _muted = false; _autoMuted = false; _volume = v; });
     } else {
       c.setVolume(0);
