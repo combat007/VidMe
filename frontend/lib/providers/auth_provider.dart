@@ -32,6 +32,7 @@ class AuthProvider extends ChangeNotifier {
   User? _user;
   String? _error;
   OAuthPendingData? _oauthPending;
+  String? _pendingVideoId;
 
   AuthStatus get status => _status;
   User? get user => _user;
@@ -39,15 +40,32 @@ class AuthProvider extends ChangeNotifier {
   bool get isAuthenticated => _status == AuthStatus.authenticated;
   bool get isAdmin => _user?.isAdmin ?? false;
   OAuthPendingData? get oauthPending => _oauthPending;
+  String? get pendingVideoId => _pendingVideoId;
 
   void clearOAuthPending() {
     _oauthPending = null;
     notifyListeners();
   }
 
+  void clearPendingVideoId() {
+    _pendingVideoId = null;
+    notifyListeners();
+  }
+
   // ── init ────────────────────────────────────────────────────────────────────
 
   Future<void> initialize() async {
+    // Web: check if we landed on a /watch/<id> deep link
+    if (kIsWeb) {
+      final uri = Uri.base;
+      if (uri.path.startsWith('/watch/')) {
+        final videoId = uri.path.substring('/watch/'.length);
+        if (videoId.isNotEmpty) {
+          _pendingVideoId = videoId;
+        }
+      }
+    }
+
     // Web: check if we landed here from an OAuth redirect
     if (kIsWeb) {
       final uri = Uri.base;
@@ -86,25 +104,31 @@ class AuthProvider extends ChangeNotifier {
     try {
       final uri = await AppLinks().getInitialLink();
       if (uri != null && uri.scheme == 'vidmez') {
-        final params = uri.queryParameters;
-        if (params.containsKey('token')) {
-          await _storeAndFetch(params['token']!);
-          return;
-        }
-        if (params.containsKey('pending')) {
-          _oauthPending = OAuthPendingData(
-            pendingToken: params['pending']!,
-            email: params['email'] ?? '',
-          );
-          _status = AuthStatus.unauthenticated;
-          notifyListeners();
-          return;
-        }
-        if (params.containsKey('error')) {
-          _error = params['error'];
-          _status = AuthStatus.unauthenticated;
-          notifyListeners();
-          return;
+        // vidmez://watch/<videoId>
+        if (uri.host == 'watch' && uri.pathSegments.isNotEmpty) {
+          _pendingVideoId = uri.pathSegments.first;
+          // Fall through to restore session from stored token below
+        } else {
+          final params = uri.queryParameters;
+          if (params.containsKey('token')) {
+            await _storeAndFetch(params['token']!);
+            return;
+          }
+          if (params.containsKey('pending')) {
+            _oauthPending = OAuthPendingData(
+              pendingToken: params['pending']!,
+              email: params['email'] ?? '',
+            );
+            _status = AuthStatus.unauthenticated;
+            notifyListeners();
+            return;
+          }
+          if (params.containsKey('error')) {
+            _error = params['error'];
+            _status = AuthStatus.unauthenticated;
+            notifyListeners();
+            return;
+          }
         }
       }
     } catch (_) {}

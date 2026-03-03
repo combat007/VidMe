@@ -15,16 +15,17 @@ import {
   oauthComplete,
 } from '../controllers/auth.controller';
 import { authenticate } from '../middleware/auth.middleware';
+import { authLimiter, signupLimiter } from '../middleware/rate-limit.middleware';
 
 const router = Router();
 
 // Email / password
 router.get('/captcha', getCaptcha);
-router.post('/signup', signup);
-router.post('/login', login);
+router.post('/signup', signupLimiter, signup);
+router.post('/login', authLimiter, login);
 router.get('/me', authenticate, (req, res) => getMe(req as any, res));
-router.post('/forgot-password', forgotPassword);
-router.post('/reset-password', resetPassword);
+router.post('/forgot-password', authLimiter, forgotPassword);
+router.post('/reset-password', authLimiter, resetPassword);
 router.post('/change-password', authenticate, (req, res) => changePassword(req as any, res));
 
 // OAuth — Google

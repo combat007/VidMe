@@ -277,6 +277,29 @@ class ApiService {
     );
   }
 
+  // Bookmarks
+  static Future<Map<String, dynamic>> toggleBookmark(String videoId) async {
+    final headers = await _authHeaders();
+    return _handleRequest<Map<String, dynamic>>(
+      _dio.post('/api/bookmarks/$videoId', options: Options(headers: headers)),
+    );
+  }
+
+  static Future<Map<String, dynamic>> getBookmarkStatus(String videoId) async {
+    final headers = await _authHeaders();
+    return _handleRequest<Map<String, dynamic>>(
+      _dio.get('/api/bookmarks/$videoId', options: Options(headers: headers)),
+    );
+  }
+
+  static Future<Map<String, dynamic>> getBookmarks({int page = 1, int limit = 20}) async {
+    final headers = await _authHeaders();
+    return _handleRequest<Map<String, dynamic>>(
+      _dio.get('/api/bookmarks', queryParameters: {'page': page, 'limit': limit},
+          options: Options(headers: headers)),
+    );
+  }
+
   // Admin
   // Password reset
   static Future<void> changePassword({

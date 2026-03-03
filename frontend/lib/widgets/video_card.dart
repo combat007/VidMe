@@ -5,8 +5,9 @@ import '../models/video.dart';
 class VideoCard extends StatelessWidget {
   final Video video;
   final VoidCallback onTap;
+  final VoidCallback? onShare;
 
-  const VideoCard({super.key, required this.video, required this.onTap});
+  const VideoCard({super.key, required this.video, required this.onTap, this.onShare});
 
   @override
   Widget build(BuildContext context) {
@@ -117,6 +118,13 @@ class VideoCard extends StatelessWidget {
                         '${video.count.likes}',
                         style: TextStyle(color: Colors.grey[500], fontSize: 11),
                       ),
+                      if (onShare != null) ...[
+                        const SizedBox(width: 4),
+                        GestureDetector(
+                          onTap: onShare,
+                          child: Icon(Icons.share, size: 11, color: Colors.grey[500]),
+                        ),
+                      ],
                     ],
                   ),
                 ],

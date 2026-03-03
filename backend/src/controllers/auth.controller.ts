@@ -9,6 +9,8 @@ import { AuthRequest } from '../middleware/auth.middleware';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 function issueToken(userId: string) {
   return jwt.sign({ userId }, process.env.JWT_SECRET!, { expiresIn: '7d' });
 }
@@ -76,6 +78,11 @@ export async function signup(req: Request, res: Response): Promise<void> {
 
   if (!email || !password || age === undefined || !captchaId || captchaAnswer === undefined) {
     res.status(400).json({ error: 'All fields are required' });
+    return;
+  }
+
+  if (!EMAIL_REGEX.test(email)) {
+    res.status(400).json({ error: 'Invalid email address' });
     return;
   }
 

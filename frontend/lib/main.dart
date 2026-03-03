@@ -4,6 +4,7 @@ import 'providers/auth_provider.dart';
 import 'providers/video_provider.dart';
 import 'screens/home/home_screen.dart';
 import 'screens/auth/oauth_age_screen.dart';
+import 'screens/video/video_player_screen.dart';
 
 void main() {
   runApp(const VidMezApp());
@@ -63,8 +64,15 @@ class VidMezApp extends StatelessWidget {
   }
 }
 
-class _AppRouter extends StatelessWidget {
+class _AppRouter extends StatefulWidget {
   const _AppRouter();
+
+  @override
+  State<_AppRouter> createState() => _AppRouterState();
+}
+
+class _AppRouterState extends State<_AppRouter> {
+  bool _videoNavigated = false;
 
   @override
   Widget build(BuildContext context) {
@@ -81,6 +89,19 @@ class _AppRouter extends StatelessWidget {
             pendingToken: auth.oauthPending!.pendingToken,
             email: auth.oauthPending!.email,
           );
+        }
+        // Deep link: push VideoPlayerScreen once auth state is resolved
+        final pendingId = auth.pendingVideoId;
+        if (pendingId != null && !_videoNavigated) {
+          _videoNavigated = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            auth.clearPendingVideoId();
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => VideoPlayerScreen(videoId: pendingId),
+              ),
+            );
+          });
         }
         return const HomeScreen();
       },

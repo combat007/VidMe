@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:intl/intl.dart';
@@ -55,6 +57,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   bool _liked = false;
   bool _likingInProgress = false;
 
+  // ── bookmarks
+  bool _bookmarked = false;
+  bool _bookmarkingInProgress = false;
+
   // ─────────────────────────────────────────────────────────────
   // Lifecycle
   // ─────────────────────────────────────────────────────────────
@@ -105,6 +111,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       setState(() { _video = video; _loadingVideo = false; });
       _initPlayer(ApiConfig.videoUrl(video.ipfsCid));
       _loadLikes();
+      _loadBookmarkStatus();
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() { _videoError = e.message; _loadingVideo = false; });
@@ -134,6 +141,63 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         _liked = r['liked'] as bool? ?? false;
       });
     } catch (_) {}
+  }
+
+  Future<void> _loadBookmarkStatus() async {
+    if (!context.read<AuthProvider>().isAuthenticated) return;
+    try {
+      final r = await ApiService.getBookmarkStatus(widget.videoId);
+      if (!mounted) return;
+      setState(() => _bookmarked = r['bookmarked'] as bool? ?? false);
+    } catch (_) {}
+  }
+
+  Future<void> _toggleBookmark() async {
+    if (!context.read<AuthProvider>().isAuthenticated) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please log in to bookmark videos')));
+      return;
+    }
+    setState(() => _bookmarkingInProgress = true);
+    try {
+      final r = await ApiService.toggleBookmark(widget.videoId);
+      if (!mounted) return;
+      setState(() => _bookmarked = r['bookmarked'] as bool);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(_bookmarked ? 'Bookmarked' : 'Bookmark removed'),
+        duration: const Duration(seconds: 1),
+      ));
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _bookmarkingInProgress = false);
+    }
+  }
+
+  String _buildShareUrl() {
+    if (kIsWeb) {
+      final uri = Uri.base;
+      final isDefaultPort = (uri.scheme == 'http' && uri.port == 80) ||
+          (uri.scheme == 'https' && uri.port == 443);
+      final origin = '${uri.scheme}://${uri.host}${isDefaultPort ? '' : ':${uri.port}'}';
+      return '$origin/watch/${widget.videoId}';
+    }
+    return '${ApiConfig.baseUrl}/watch/${widget.videoId}';
+  }
+
+  Future<void> _shareVideo() async {
+    final url = _buildShareUrl();
+    if (kIsWeb) {
+      await Clipboard.setData(ClipboardData(text: url));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Link copied to clipboard')));
+      }
+    } else {
+      final title = _video?.title ?? 'Check out this video on VidMez';
+      await Share.share('$title\n$url');
+    }
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -780,6 +844,20 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                     ),
                   ),
                 ),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: _bookmarkingInProgress ? null : _toggleBookmark,
+                tooltip: _bookmarked ? 'Remove bookmark' : 'Bookmark',
+                icon: Icon(
+                  _bookmarked ? Icons.bookmark : Icons.bookmark_border,
+                  color: _bookmarked ? const Color(0xFF1E88E5) : Colors.white70,
+                ),
+              ),
+              IconButton(
+                onPressed: _shareVideo,
+                tooltip: 'Share',
+                icon: const Icon(Icons.share, color: Colors.white70),
+              ),
             ],
           ),
           if (v.description != null && v.description!.isNotEmpty) ...[

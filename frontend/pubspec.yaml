@@ -40,6 +40,9 @@ dependencies:
   # Deep link handling — catches vidmez:// launch intent when OS killed app during OAuth
   app_links: ^6.0.0
 
+  # Share content natively (mobile) or via clipboard (web)
+  share_plus: ^9.0.0
+
   # Icons
   cupertino_icons: ^1.0.6
 

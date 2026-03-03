@@ -1,10 +1,16 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
+import '../../config/api_config.dart';
+import '../../models/video.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/video_provider.dart';
 import '../../services/api_service.dart';
 import '../../widgets/video_card.dart';
+import '../bookmarks/bookmarks_screen.dart';
 import '../upload/upload_screen.dart';
 import '../video/video_player_screen.dart';
 import '../admin/admin_panel_screen.dart';
@@ -90,6 +96,29 @@ class _HomeScreenState extends State<HomeScreen> {
     final title = suggestion['title'] as String;
     _searchController.text = title;
     _submitSearch(title);
+  }
+
+  Future<void> _shareVideo(BuildContext context, Video video) async {
+    String url;
+    if (kIsWeb) {
+      final uri = Uri.base;
+      final isDefaultPort = (uri.scheme == 'http' && uri.port == 80) ||
+          (uri.scheme == 'https' && uri.port == 443);
+      final origin = '${uri.scheme}://${uri.host}${isDefaultPort ? '' : ':${uri.port}'}';
+      url = '$origin/watch/${video.id}';
+    } else {
+      url = '${ApiConfig.baseUrl}/watch/${video.id}';
+    }
+
+    if (kIsWeb) {
+      await Clipboard.setData(ClipboardData(text: url));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Link copied to clipboard')));
+      }
+    } else {
+      await Share.share('${video.title}\n$url');
+    }
   }
 
   void _clearSearch() {
@@ -181,6 +210,12 @@ class _HomeScreenState extends State<HomeScreen> {
                       MaterialPageRoute(
                           builder: (_) => const ChangePasswordScreen()),
                     );
+                  } else if (value == 'bookmarks') {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const BookmarksScreen()),
+                    );
                   }
                 },
                 itemBuilder: (_) => [
@@ -193,12 +228,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const PopupMenuDivider(),
                   const PopupMenuItem(
-                    value: 'logout',
+                    value: 'bookmarks',
                     child: Row(
                       children: [
-                        Icon(Icons.logout, size: 18),
+                        Icon(Icons.bookmark_border, size: 18),
                         SizedBox(width: 8),
-                        Text('Log Out'),
+                        Text('Bookmarks'),
                       ],
                     ),
                   ),
@@ -209,6 +244,16 @@ class _HomeScreenState extends State<HomeScreen> {
                         Icon(Icons.lock_reset, size: 18),
                         SizedBox(width: 8),
                         Text('Change Password'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'logout',
+                    child: Row(
+                      children: [
+                        Icon(Icons.logout, size: 18),
+                        SizedBox(width: 8),
+                        Text('Log Out'),
                       ],
                     ),
                   ),
@@ -323,6 +368,7 @@ class _HomeScreenState extends State<HomeScreen> {
               builder: (_) => VideoPlayerScreen(videoId: video.id),
             ),
           ),
+          onShare: () => _shareVideo(context, video),
         );
       },
     );
