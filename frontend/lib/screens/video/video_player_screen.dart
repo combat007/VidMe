@@ -45,6 +45,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   // ── volume
   double _volume = 1.0;
   bool _muted = false;
+  bool _autoMuted = false; // true when muted automatically for browser autoplay
 
   // ── display mode
   _SizeMode _sizeMode = _SizeMode.tile;
@@ -127,9 +128,40 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     _controller!.initialize().then((_) {
       if (!mounted) return;
       setState(() => _playerInitialized = true);
-      _controller!.play();
+      _tryAutoplay();
       _resetHideTimer();
     }).catchError((e) => debugPrint('Player init error: $e'));
+  }
+
+  /// Starts playback immediately after the controller is ready.
+  ///
+  /// On web, browsers block unmuted autoplay on direct page load (e.g. opening
+  /// a shared link). We work around this by starting muted, which is always
+  /// allowed, and showing a "Tap to unmute" badge. If even muted autoplay fails
+  /// (very rare), we reset state so the user can tap play manually.
+  ///
+  /// On native Android/iOS there is no autoplay restriction, so we play with
+  /// sound right away.
+  Future<void> _tryAutoplay() async {
+    if (!mounted) return;
+    if (kIsWeb) {
+      // Mute first, then play — browsers always allow muted autoplay.
+      await _controller!.setVolume(0);
+      setState(() { _muted = true; _autoMuted = true; });
+      await _controller!.play();
+      // Wait 600 ms for the browser to confirm playback started.
+      await Future.delayed(const Duration(milliseconds: 600));
+      if (!mounted) return;
+      if (!(_controller?.value.isPlaying ?? false)) {
+        // Even muted autoplay was blocked — restore unmuted state so the
+        // user can tap the play button normally (gesture unlocks autoplay).
+        await _controller!.setVolume(_volume);
+        setState(() { _muted = false; _autoMuted = false; });
+      }
+    } else {
+      // Native: no browser autoplay policy — play with sound immediately.
+      _controller!.play();
+    }
   }
 
   Future<void> _loadLikes() async {
@@ -244,7 +276,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     if (_muted) {
       final v = _volume > 0 ? _volume : 1.0;
       c.setVolume(v);
-      setState(() { _muted = false; _volume = v; });
+      // Also clear _autoMuted so the "Tap to unmute" badge disappears.
+      setState(() { _muted = false; _autoMuted = false; _volume = v; });
     } else {
       c.setVolume(0);
       setState(() => _muted = true);
@@ -254,7 +287,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   void _setVolume(double v) {
     _controller?.setVolume(v);
-    setState(() { _volume = v; _muted = v == 0; });
+    setState(() { _volume = v; _muted = v == 0; if (v > 0) _autoMuted = false; });
     _resetHideTimer();
   }
 
@@ -444,6 +477,32 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
             duration: const Duration(milliseconds: 250),
             child: _buildPlayControls(),
           ),
+
+          // 7. "Tap to unmute" badge — visible while browser auto-muted the video
+          if (_autoMuted && _playerInitialized)
+            Positioned(
+              bottom: 72,
+              left: 12,
+              child: GestureDetector(
+                onTap: _toggleMute,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.volume_off, color: Colors.white, size: 16),
+                      SizedBox(width: 6),
+                      Text('Tap to unmute',
+                          style: TextStyle(color: Colors.white, fontSize: 12)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
