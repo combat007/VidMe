@@ -1,0 +1,10 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.vidmez.app",
+    "sha256_cert_fingerprints": [
+      "D6:FD:91:6C:0C:B0:E8:F9:A6:A4:1F:C6:D3:48:C8:7F:E0:9C:71:85:0A:46:D7:97:FB:74:85:99:09:69:33:A3"
+    ]
+  }
+}]

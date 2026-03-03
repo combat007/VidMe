@@ -103,31 +103,42 @@ class AuthProvider extends ChangeNotifier {
     //  FlutterWebAuth2.authenticate() never resolved in the old process)
     try {
       final uri = await AppLinks().getInitialLink();
-      if (uri != null && uri.scheme == 'vidmez') {
-        // vidmez://watch/<videoId>
-        if (uri.host == 'watch' && uri.pathSegments.isNotEmpty) {
-          _pendingVideoId = uri.pathSegments.first;
-          // Fall through to restore session from stored token below
-        } else {
-          final params = uri.queryParameters;
-          if (params.containsKey('token')) {
-            await _storeAndFetch(params['token']!);
-            return;
+      if (uri != null) {
+        if (uri.scheme == 'https' || uri.scheme == 'http') {
+          // Android App Link: https://vidmez.com/watch/<videoId>
+          if (uri.path.startsWith('/watch/')) {
+            final videoId = uri.path.substring('/watch/'.length);
+            if (videoId.isNotEmpty) {
+              _pendingVideoId = videoId;
+              // Fall through to restore session from stored token below
+            }
           }
-          if (params.containsKey('pending')) {
-            _oauthPending = OAuthPendingData(
-              pendingToken: params['pending']!,
-              email: params['email'] ?? '',
-            );
-            _status = AuthStatus.unauthenticated;
-            notifyListeners();
-            return;
-          }
-          if (params.containsKey('error')) {
-            _error = params['error'];
-            _status = AuthStatus.unauthenticated;
-            notifyListeners();
-            return;
+        } else if (uri.scheme == 'vidmez') {
+          // vidmez://watch/<videoId>
+          if (uri.host == 'watch' && uri.pathSegments.isNotEmpty) {
+            _pendingVideoId = uri.pathSegments.first;
+            // Fall through to restore session from stored token below
+          } else {
+            final params = uri.queryParameters;
+            if (params.containsKey('token')) {
+              await _storeAndFetch(params['token']!);
+              return;
+            }
+            if (params.containsKey('pending')) {
+              _oauthPending = OAuthPendingData(
+                pendingToken: params['pending']!,
+                email: params['email'] ?? '',
+              );
+              _status = AuthStatus.unauthenticated;
+              notifyListeners();
+              return;
+            }
+            if (params.containsKey('error')) {
+              _error = params['error'];
+              _status = AuthStatus.unauthenticated;
+              notifyListeners();
+              return;
+            }
           }
         }
       }

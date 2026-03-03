@@ -52,6 +52,20 @@
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="vidmez"/>
             </intent-filter>
+
+            <!-- Android App Links — https://vidmez.com/watch/<id> opens app -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https" android:host="vidmez.com" android:pathPrefix="/watch/"/>
+            </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https" android:host="www.vidmez.com" android:pathPrefix="/watch/"/>
+            </intent-filter>
         </activity>
 
         <!-- Provide a FileProvider for file_picker uploads -->
