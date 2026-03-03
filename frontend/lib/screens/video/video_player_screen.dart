@@ -129,8 +129,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     _controller!.initialize().then((_) {
       if (!mounted) return;
       setState(() => _playerInitialized = true);
-      _tryAutoplay();
       _resetHideTimer();
+      // Wait for the VideoPlayer widget to be rendered (and the <video> DOM
+      // element to be mounted by video_player_web) before attempting autoplay.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _tryAutoplay());
     }).catchError((e) => debugPrint('Player init error: $e'));
   }
 
@@ -143,24 +145,34 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   ///
   /// On native Android/iOS there is no autoplay restriction, so we play with
   /// sound right away.
+  /// YouTube-style autoplay: start muted so the browser allows it,
+  /// show a "Tap to unmute" badge, let the user choose to restore sound.
+  ///
+  /// We call [autoplayMuted()] which:
+  ///  1. Polls the DOM (with shadow-DOM traversal) until the <video> element
+  ///     appears — video_player_web mounts the element asynchronously after
+  ///     controller.initialize() resolves, so we cannot call setVolume/play
+  ///     immediately; we would be operating on a non-existent element.
+  ///  2. Sets muted=true + the HTML `muted` attribute on the element (browsers
+  ///     check the DOM property, not Flutter's volume state).
+  ///  3. Calls videoElement.play() directly — video_player_web's event
+  ///     listeners pick up the `playing` event and update
+  ///     controller.value.isPlaying automatically.
   Future<void> _tryAutoplay() async {
     if (!mounted) return;
     if (kIsWeb) {
-      // Browsers enforce autoplay by checking videoElement.muted, NOT volume.
-      // setVolume(0) only sets volume=0 which is NOT treated as muted by the
-      // autoplay policy — we must set the DOM property directly.
-      setVideoElementMuted(true);   // <video muted> on the actual DOM element
-      await _controller!.setVolume(0); // keep Flutter's volume state in sync
+      // Optimistically show muted state in the UI while we search for the element.
       setState(() { _muted = true; _autoMuted = true; });
-      await _controller!.play();
-      // Give the browser up to 600 ms to honour the play() call.
-      await Future.delayed(const Duration(milliseconds: 600));
+
+      final played = await autoplayMuted(maxMs: 2000);
       if (!mounted) return;
-      if (!(_controller?.value.isPlaying ?? false)) {
-        // Even muted autoplay failed (very rare). Restore state so the user
-        // can tap the play button — a user gesture unlocks autoplay.
+
+      if (played) {
+        // Keep Flutter's volume model in sync with the DOM muted state.
+        await _controller?.setVolume(0);
+      } else {
+        // Element not found or play() rejected — reset so user can tap play.
         setVideoElementMuted(false);
-        await _controller!.setVolume(_volume);
         setState(() { _muted = false; _autoMuted = false; });
       }
     } else {
@@ -485,7 +497,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
           ),
 
           // 7. "Tap to unmute" badge — visible while browser auto-muted the video
-          if (_autoMuted && _playerInitialized)
+          if (_autoMuted && _playerInitialized && (_controller?.value.isPlaying ?? false))
             Positioned(
               bottom: 72,
               left: 12,
