@@ -1,24 +1,42 @@
 import 'dart:async';
+import 'dart:math';
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+
 import '../../config/api_config.dart';
 import '../../models/video.dart';
 import '../../models/youtube_video.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/video_provider.dart';
 import '../../services/api_service.dart';
-import '../../widgets/video_card.dart';
-import '../../widgets/youtube_video_card.dart';
+import '../../widgets/feed_card.dart';
+import '../admin/admin_panel_screen.dart';
+import '../auth/change_password_screen.dart';
+import '../auth/login_screen.dart';
 import '../bookmarks/bookmarks_screen.dart';
 import '../upload/upload_screen.dart';
 import '../video/video_player_screen.dart';
 import '../youtube/youtube_player_screen.dart';
-import '../admin/admin_panel_screen.dart';
-import '../auth/change_password_screen.dart';
-import '../auth/login_screen.dart';
+
+// ── Feed item union ────────────────────────────────────────────────────────────
+sealed class _FeedItem {}
+
+class _VidMezItem extends _FeedItem {
+  final Video video;
+  _VidMezItem(this.video);
+}
+
+class _YouTubeItem extends _FeedItem {
+  final YouTubeVideo video;
+  _YouTubeItem(this.video);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -33,7 +51,6 @@ class _HomeScreenState extends State<HomeScreen> {
   // YouTube trending
   List<YouTubeVideo> _ytVideos = [];
   bool _ytLoading = true;
-  String _ytRegion = 'US';
 
   // Search state
   bool _searchActive = false;
@@ -76,7 +93,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadYouTubeTrending() async {
-    // Detect region from locale
     String region = 'US';
     try {
       final locale = Localizations.localeOf(context);
@@ -84,7 +100,7 @@ class _HomeScreenState extends State<HomeScreen> {
         region = locale.countryCode!.toUpperCase();
       }
     } catch (_) {}
-    setState(() { _ytLoading = true; _ytRegion = region; });
+    setState(() => _ytLoading = true);
     try {
       final videos = await ApiService.getYouTubeTrending(
         regionCode: region,
@@ -95,6 +111,8 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) setState(() => _ytLoading = false);
     }
   }
+
+  // ── Search ──────────────────────────────────────────────────────────────────
 
   void _activateSearch() {
     setState(() => _searchActive = true);
@@ -131,22 +149,31 @@ class _HomeScreenState extends State<HomeScreen> {
     _submitSearch(title);
   }
 
-  Future<void> _shareVideo(BuildContext context, Video video) async {
+  void _clearSearch() {
+    _searchController.clear();
+    _debounce?.cancel();
+    setState(() { _suggestions = []; _searchActive = false; });
+    context.read<VideoProvider>().setSearch('');
+  }
+
+  // ── Share ────────────────────────────────────────────────────────────────────
+
+  Future<void> _shareVideo(BuildContext ctx, Video video) async {
     String url;
     if (kIsWeb) {
       final uri = Uri.base;
-      final isDefaultPort = (uri.scheme == 'http' && uri.port == 80) ||
+      final isDefault = (uri.scheme == 'http' && uri.port == 80) ||
           (uri.scheme == 'https' && uri.port == 443);
-      final origin = '${uri.scheme}://${uri.host}${isDefaultPort ? '' : ':${uri.port}'}';
+      final origin =
+          '${uri.scheme}://${uri.host}${isDefault ? '' : ':${uri.port}'}';
       url = '$origin/watch/${video.id}';
     } else {
       url = '${ApiConfig.baseUrl}/watch/${video.id}';
     }
-
     if (kIsWeb) {
       await Clipboard.setData(ClipboardData(text: url));
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+      if (ctx.mounted) {
+        ScaffoldMessenger.of(ctx).showSnackBar(
             const SnackBar(content: Text('Link copied to clipboard')));
       }
     } else {
@@ -154,15 +181,210 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _clearSearch() {
-    _searchController.clear();
-    _debounce?.cancel();
-    setState(() {
-      _suggestions = [];
-      _searchActive = false;
-    });
-    context.read<VideoProvider>().setSearch('');
+  // ── Feed building ────────────────────────────────────────────────────────────
+
+  /// Interleaves VidMez and YouTube videos 1:1.
+  /// During search, shows only VidMez results.
+  List<_FeedItem> _buildFeed(List<Video> vidmez, List<YouTubeVideo> yt) {
+    if (_searchActive) {
+      return vidmez.map((v) => _VidMezItem(v)).toList();
+    }
+    final result = <_FeedItem>[];
+    final len = max(vidmez.length, yt.length);
+    for (int i = 0; i < len; i++) {
+      if (i < vidmez.length) result.add(_VidMezItem(vidmez[i]));
+      if (i < yt.length) result.add(_YouTubeItem(yt[i]));
+    }
+    return result;
   }
+
+  void _onFeedTap(_FeedItem item) {
+    switch (item) {
+      case _VidMezItem v:
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (_) => VideoPlayerScreen(videoId: v.video.id)),
+        );
+      case _YouTubeItem y:
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (_) => YouTubePlayerScreen(video: y.video)),
+        );
+    }
+  }
+
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+
+  static String _fmtViews(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M views';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(0)}K views';
+    return '$n views';
+  }
+
+  Widget _pill(String label, Color bg, {IconData? icon}) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        decoration:
+            BoxDecoration(color: bg, borderRadius: BorderRadius.circular(4)),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, color: Colors.white, size: 11),
+              const SizedBox(width: 2),
+            ],
+            Text(label,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold)),
+          ],
+        ),
+      );
+
+  Widget _thumbPlaceholder({double iconSize = 40}) => Container(
+        color: const Color(0xFF2A2A2A),
+        child: Center(
+          child: Icon(Icons.play_circle_outline,
+              size: iconSize, color: Colors.white24),
+        ),
+      );
+
+  // ── Hero card (hierarchical — wide screens only) ──────────────────────────
+
+  Widget _buildHeroCard(_FeedItem item) {
+    final bool isYT = item is _YouTubeItem;
+    final String title;
+    final String channel;
+    final String? thumbUrl;
+    final String duration;
+    final String views;
+
+    if (isYT) {
+      final v = (item as _YouTubeItem).video;
+      title = v.title;
+      channel = v.channelTitle;
+      thumbUrl = v.thumbnail;
+      duration = v.formattedDuration;
+      views = v.formattedViews;
+    } else {
+      final v = (item as _VidMezItem).video;
+      title = v.title;
+      channel = v.user.email;
+      thumbUrl = v.thumbnailCid != null
+          ? ApiConfig.thumbnailUrl(v.thumbnailCid!)
+          : null;
+      duration = v.formattedDuration;
+      views = _fmtViews(v.viewCount);
+    }
+
+    return GestureDetector(
+      onTap: () => _onFeedTap(item),
+      child: Container(
+        height: 230,
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E1E1E),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Row(
+          children: [
+            // Thumbnail — 58% of width
+            Expanded(
+              flex: 58,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  thumbUrl != null
+                      ? CachedNetworkImage(
+                          imageUrl: thumbUrl,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => _thumbPlaceholder(iconSize: 48),
+                          errorWidget: (_, __, ___) =>
+                              _thumbPlaceholder(iconSize: 48),
+                        )
+                      : _thumbPlaceholder(iconSize: 48),
+                  // Duration badge
+                  Positioned(
+                      right: 8,
+                      bottom: 8,
+                      child: _pill(duration, Colors.black87)),
+                  // Source badge
+                  Positioned(
+                    left: 8,
+                    top: 8,
+                    child: _pill(
+                      isYT ? 'YouTube Trending' : 'VidMez',
+                      isYT ? Colors.red : const Color(0xFF1E88E5),
+                      icon: isYT
+                          ? Icons.play_arrow
+                          : Icons.play_circle_filled,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Info — 42% of width
+            Expanded(
+              flex: 42,
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 4,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                        height: 1.35,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      channel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          color: Colors.grey[400],
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '$views · $duration',
+                      style:
+                          TextStyle(color: Colors.grey[600], fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Grid card ────────────────────────────────────────────────────────────────
+
+  Widget _buildGridCard(_FeedItem item) {
+    switch (item) {
+      case _VidMezItem v:
+        return FeedCard.vidmez(video: v.video, onTap: () => _onFeedTap(item));
+      case _YouTubeItem y:
+        return FeedCard.youtube(video: y.video, onTap: () => _onFeedTap(item));
+    }
+  }
+
+  // ── AppBar ───────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -189,7 +411,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Icon(Icons.play_circle_filled, color: Color(0xFF1E88E5)),
                   SizedBox(width: 8),
-                  Text('VidMez', style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text('VidMez',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
                 ],
               ),
         actions: [
@@ -213,7 +436,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   tooltip: 'Admin Panel',
                   onPressed: () => Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => const AdminPanelScreen()),
+                    MaterialPageRoute(
+                        builder: (_) => const AdminPanelScreen()),
                   ).then((_) => _refresh()),
                 ),
               IconButton(
@@ -239,65 +463,54 @@ class _HomeScreenState extends State<HomeScreen> {
                     auth.logout();
                   } else if (value == 'change_password') {
                     Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const ChangePasswordScreen()),
-                    );
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const ChangePasswordScreen()));
                   } else if (value == 'bookmarks') {
                     Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const BookmarksScreen()),
-                    );
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const BookmarksScreen()));
                   }
                 },
                 itemBuilder: (_) => [
                   PopupMenuItem(
                     enabled: false,
-                    child: Text(
-                      auth.user!.email,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
+                    child: Text(auth.user!.email,
+                        style:
+                            const TextStyle(fontWeight: FontWeight.bold)),
                   ),
                   const PopupMenuDivider(),
                   const PopupMenuItem(
                     value: 'bookmarks',
-                    child: Row(
-                      children: [
-                        Icon(Icons.bookmark_border, size: 18),
-                        SizedBox(width: 8),
-                        Text('Bookmarks'),
-                      ],
-                    ),
+                    child: Row(children: [
+                      Icon(Icons.bookmark_border, size: 18),
+                      SizedBox(width: 8),
+                      Text('Bookmarks'),
+                    ]),
                   ),
                   const PopupMenuItem(
                     value: 'change_password',
-                    child: Row(
-                      children: [
-                        Icon(Icons.lock_reset, size: 18),
-                        SizedBox(width: 8),
-                        Text('Change Password'),
-                      ],
-                    ),
+                    child: Row(children: [
+                      Icon(Icons.lock_reset, size: 18),
+                      SizedBox(width: 8),
+                      Text('Change Password'),
+                    ]),
                   ),
                   const PopupMenuItem(
                     value: 'logout',
-                    child: Row(
-                      children: [
-                        Icon(Icons.logout, size: 18),
-                        SizedBox(width: 8),
-                        Text('Log Out'),
-                      ],
-                    ),
+                    child: Row(children: [
+                      Icon(Icons.logout, size: 18),
+                      SizedBox(width: 8),
+                      Text('Log Out'),
+                    ]),
                   ),
                 ],
               ),
             ] else
               TextButton(
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
-                ),
+                onPressed: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const LoginScreen())),
                 child: const Text('Log In'),
               ),
             const SizedBox(width: 8),
@@ -324,10 +537,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       .map((s) => ListTile(
                             leading:
                                 const Icon(Icons.search, color: Colors.grey),
-                            title: Text(
-                              s['title'] as String,
-                              style: const TextStyle(color: Colors.white),
-                            ),
+                            title: Text(s['title'] as String,
+                                style:
+                                    const TextStyle(color: Colors.white)),
                             onTap: () => _selectSuggestion(s),
                           ))
                       .toList(),
@@ -339,12 +551,19 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // ── Body ─────────────────────────────────────────────────────────────────────
+
   Widget _buildBody(VideoProvider videoProvider) {
-    if (videoProvider.loading && videoProvider.videos.isEmpty && _ytVideos.isEmpty && _ytLoading) {
+    final screenWidth = MediaQuery.of(context).size.width;
+
+    // Show spinner only when truly nothing has loaded yet
+    final nothingLoaded = videoProvider.videos.isEmpty && _ytVideos.isEmpty;
+    if (nothingLoaded && videoProvider.loading && _ytLoading) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (videoProvider.error != null && videoProvider.videos.isEmpty) {
+    // Error state (no content at all)
+    if (videoProvider.error != null && nothingLoaded) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -354,182 +573,96 @@ class _HomeScreenState extends State<HomeScreen> {
             Text(videoProvider.error!,
                 style: const TextStyle(color: Colors.white)),
             const SizedBox(height: 16),
-            ElevatedButton(onPressed: _refresh, child: const Text('Retry')),
+            ElevatedButton(
+                onPressed: _refresh, child: const Text('Retry')),
           ],
         ),
       );
     }
 
+    final feed = _buildFeed(videoProvider.videos, _ytVideos);
+
+    // Empty state
+    if (feed.isEmpty && !videoProvider.loading && !_ytLoading) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.video_library_outlined,
+                size: 56, color: Colors.grey),
+            const SizedBox(height: 12),
+            const Text('No videos yet. Be the first to upload!',
+                style: TextStyle(color: Colors.grey, fontSize: 15)),
+            const SizedBox(height: 16),
+            ElevatedButton(
+                onPressed: _refresh, child: const Text('Refresh')),
+          ],
+        ),
+      );
+    }
+
+    // ── Responsive grid dimensions ───────────────────────────────────────────
+    const double hPad = 12;
+    const double gap = 10;
+
+    // Web: 2–5 columns at ~300 px each; mobile: always 2 columns
+    final bool isWide = screenWidth > 700;
+    final int cols =
+        isWide ? (screenWidth / 300).floor().clamp(2, 5) : 2;
+
+    // Card width → thumbnail height (16:9) + fixed info strip = total height
+    final double cardWidth =
+        (screenWidth - 2 * hPad - (cols - 1) * gap) / cols;
+    final double mainAxisExtent = cardWidth * 9 / 16 + 78;
+
+    // ── Hierarchical hero (wide screens) ────────────────────────────────────
+    // First feed item shown as a full-width hero; rest fill the grid.
+    final _FeedItem? heroItem =
+        (isWide && feed.isNotEmpty) ? feed.first : null;
+    final List<_FeedItem> gridFeed =
+        heroItem != null ? feed.skip(1).toList() : feed;
+
     return CustomScrollView(
       controller: _scrollController,
       slivers: [
-        // ── YouTube Trending shelf ──────────────────────────────────────────
-        SliverToBoxAdapter(child: _buildYouTubeShelf()),
+        // Hero card — hierarchical, wide screens only
+        if (heroItem != null)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(hPad, 12, hPad, 8),
+              child: _buildHeroCard(heroItem),
+            ),
+          ),
 
-        // ── VidMez section header ───────────────────────────────────────────
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: Row(
-              children: [
-                const Icon(Icons.play_circle_filled,
-                    color: Color(0xFF1E88E5), size: 20),
-                const SizedBox(width: 8),
-                const Text('VidMez Videos',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold)),
-                const Spacer(),
-                if (videoProvider.loading && videoProvider.videos.isNotEmpty)
-                  const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2)),
-              ],
+        // Modular grid — all screens
+        SliverPadding(
+          padding: EdgeInsets.fromLTRB(
+              hPad, heroItem == null ? 12 : 4, hPad, 12),
+          sliver: SliverGrid(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: cols,
+              childAspectRatio: cardWidth / mainAxisExtent,
+              crossAxisSpacing: gap,
+              mainAxisSpacing: gap,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (ctx, idx) {
+                if (idx >= gridFeed.length) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  );
+                }
+                return _buildGridCard(gridFeed[idx]);
+              },
+              childCount:
+                  gridFeed.length + (videoProvider.hasMore ? 1 : 0),
             ),
           ),
         ),
-
-        // ── VidMez video grid ───────────────────────────────────────────────
-        if (videoProvider.videos.isEmpty && !videoProvider.loading)
-          const SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.symmetric(vertical: 48),
-              child: Column(
-                children: [
-                  Icon(Icons.video_library_outlined,
-                      size: 56, color: Colors.grey),
-                  SizedBox(height: 12),
-                  Text('No videos yet. Be the first to upload!',
-                      style: TextStyle(color: Colors.grey, fontSize: 15)),
-                ],
-              ),
-            ),
-          )
-        else
-          SliverPadding(
-            padding: const EdgeInsets.all(12),
-            sliver: SliverGrid(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  if (index >= videoProvider.videos.length) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  final video = videoProvider.videos[index];
-                  return VideoCard(
-                    video: video,
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) =>
-                              VideoPlayerScreen(videoId: video.id)),
-                    ),
-                    onShare: () => _shareVideo(context, video),
-                  );
-                },
-                childCount: videoProvider.videos.length +
-                    (videoProvider.hasMore ? 1 : 0),
-              ),
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 400,
-                childAspectRatio: 1.3,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-              ),
-            ),
-          ),
       ],
-    );
-  }
-
-  Widget _buildYouTubeShelf() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(0, 8, 0, 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Section header
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-            child: Row(
-              children: [
-                const Icon(Icons.play_circle_filled,
-                    color: Colors.red, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  'Trending on YouTube · $_ytRegion',
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold),
-                ),
-                const Spacer(),
-                if (_ytLoading)
-                  const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.red)),
-              ],
-            ),
-          ),
-
-          // Horizontal scroll of cards
-          if (_ytLoading && _ytVideos.isEmpty)
-            SizedBox(
-              height: 175,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: 5,
-                itemBuilder: (_, __) => _skeletonCard(),
-              ),
-            )
-          else if (_ytVideos.isEmpty)
-            const SizedBox(
-              height: 60,
-              child: Center(
-                child: Text('YouTube trending unavailable',
-                    style: TextStyle(color: Colors.grey)),
-              ),
-            )
-          else
-            SizedBox(
-              height: 210,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: _ytVideos.length,
-                itemBuilder: (context, index) {
-                  final video = _ytVideos[index];
-                  return YouTubeVideoCard(
-                    video: video,
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => YouTubePlayerScreen(video: video)),
-                    ),
-                  );
-                },
-              ),
-            ),
-
-          const SizedBox(height: 8),
-          const Divider(color: Color(0xFF2A2A2A), height: 1),
-        ],
-      ),
-    );
-  }
-
-  Widget _skeletonCard() {
-    return Container(
-      width: 200,
-      margin: const EdgeInsets.only(right: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF2A2A2A),
-        borderRadius: BorderRadius.circular(8),
-      ),
     );
   }
 }
