@@ -1,6 +1,4 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:app_links/app_links.dart';
 import '../config/api_config.dart';
@@ -46,14 +44,6 @@ class AuthProvider extends ChangeNotifier {
     _oauthPending = null;
     notifyListeners();
   }
-
-  // ── Google Sign-In instance (mobile only) ───────────────────────────────────
-  static const _googleClientId = String.fromEnvironment('GOOGLE_CLIENT_ID');
-  final _googleSignIn = GoogleSignIn(
-    clientId: kIsWeb && _googleClientId.isNotEmpty ? _googleClientId : null,
-    serverClientId: !kIsWeb && _googleClientId.isNotEmpty ? _googleClientId : null,
-    scopes: ['email', 'profile'],
-  );
 
   // ── init ────────────────────────────────────────────────────────────────────
 
@@ -192,27 +182,40 @@ class AuthProvider extends ChangeNotifier {
         await Future.delayed(const Duration(minutes: 10));
         return null;
       } else {
-        // Mobile: use google_sign_in (Play Services)
-        final account = await _googleSignIn.signIn();
-        if (account == null) return null;
+        // Mobile: web redirect flow via Chrome Custom Tab (same as GitHub)
+        const callbackScheme = 'vidmez';
+        final url = '${ApiConfig.baseUrl}/api/auth/google?platform=mobile';
 
-        final auth = await account.authentication;
-        final idToken = auth.idToken;
-        if (idToken == null) {
-          _error = 'Could not get Google credentials. '
-              'Ensure GOOGLE_CLIENT_ID is set and SHA-1 is registered.';
+        final resultUrl = await FlutterWebAuth2.authenticate(
+          url: url,
+          callbackUrlScheme: callbackScheme,
+        );
+
+        final uri = Uri.parse(resultUrl);
+        final params = uri.queryParameters;
+
+        if (params.containsKey('error')) {
+          _error = params['error'];
           notifyListeners();
           return null;
         }
-        final result = await ApiService.googleAuth(idToken: idToken);
-        return _handleOAuthResult(result);
+        if (params.containsKey('token')) {
+          await _storeAndFetch(params['token']!);
+          return const OAuthResult(needsAge: false);
+        }
+        if (params.containsKey('pending')) {
+          return OAuthResult(
+            needsAge: true,
+            pendingToken: params['pending'],
+            email: params['email'],
+          );
+        }
+        _error = 'Google sign-in failed: unexpected response';
+        notifyListeners();
+        return null;
       }
     } catch (e) {
-      if (e is PlatformException) {
-        _error = 'Google sign-in failed (code: ${e.code}, msg: ${e.message})';
-      } else {
-        _error = 'Google sign-in failed: $e';
-      }
+      _error = 'Google sign-in failed: $e';
       notifyListeners();
       return null;
     }
@@ -288,7 +291,6 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> logout() async {
     await StorageService.deleteToken();
-    try { await _googleSignIn.signOut(); } catch (_) {}
     _user = null;
     _oauthPending = null;
     _status = AuthStatus.unauthenticated;
