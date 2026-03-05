@@ -2,12 +2,16 @@ import { Response } from 'express';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { v4 as uuidv4 } from 'uuid';
 import ffmpeg from 'fluent-ffmpeg';
 import prisma from '../config/prisma';
+import redis from '../config/redis';
 import { uploadToIPFS, unpinFromIPFS } from '../services/ipfs.service';
 import { getVideoDuration, validateDuration } from '../services/video.service';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { PINATA_GATEWAY } from '../config/pinata';
+
+const FINALIZE_TTL = 7200; // 2 hours — job result kept in Redis
 
 function extractThumbnail(
   videoPath: string,
@@ -110,25 +114,25 @@ export async function uploadChunk(req: AuthRequest, res: Response): Promise<void
   res.json({ received: true, chunkIndex: Number(chunkIndex), totalChunks: Number(totalChunks) });
 }
 
-export async function finalizeChunkedUpload(req: AuthRequest, res: Response): Promise<void> {
-  const { uploadId, totalChunks, filename } = req.body;
-  if (!uploadId || !totalChunks || !filename) {
-    res.status(400).json({ error: 'Missing finalize parameters (uploadId, totalChunks, filename)' });
-    return;
-  }
-
+// Runs in background — updates Redis job status when done
+async function runFinalize(jobId: string, uploadId: string, totalChunks: number, filename: string) {
   const chunkDir = path.join(os.tmpdir(), 'vidme-chunks', uploadId);
   const ext = path.extname(filename) || '.mp4';
   const assembledPath = path.join(os.tmpdir(), `vidme-assembled-${uploadId}${ext}`);
 
+  const fail = async (msg: string) => {
+    await redis.set(`finalize:${jobId}`, JSON.stringify({ status: 'error', error: msg }), 'EX', FINALIZE_TTL);
+    if (fs.existsSync(assembledPath)) try { fs.unlinkSync(assembledPath); } catch (_) {}
+    if (fs.existsSync(chunkDir)) fs.rmSync(chunkDir, { recursive: true, force: true });
+  };
+
   try {
-    // Stream-assemble chunks (memory-efficient)
+    // Stream-assemble chunks
     const writeStream = fs.createWriteStream(assembledPath);
-    for (let i = 0; i < Number(totalChunks); i++) {
+    for (let i = 0; i < totalChunks; i++) {
       const chunkPath = path.join(chunkDir, `chunk_${i}`);
       if (!fs.existsSync(chunkPath)) {
-        writeStream.destroy();
-        res.status(400).json({ error: `Missing chunk ${i}` });
+        await fail(`Missing chunk ${i}`);
         return;
       }
       await new Promise<void>((resolve, reject) => {
@@ -143,27 +147,23 @@ export async function finalizeChunkedUpload(req: AuthRequest, res: Response): Pr
       writeStream.on('finish', resolve);
       writeStream.on('error', reject);
     });
-
-    // Clean up chunks
     fs.rmSync(chunkDir, { recursive: true, force: true });
 
-    // Reuse same processing pipeline as uploadVideoFile
+    // Validate duration
     let duration: number;
     try {
       duration = await getVideoDuration(assembledPath);
     } catch {
-      fs.unlinkSync(assembledPath);
-      res.status(422).json({ error: 'Could not read video duration. Ensure the file is a valid video.' });
+      await fail('Could not read video duration. Ensure the file is a valid video.');
       return;
     }
-
     const durationError = validateDuration(duration);
     if (durationError) {
-      fs.unlinkSync(assembledPath);
-      res.status(422).json({ error: durationError });
+      await fail(durationError);
       return;
     }
 
+    // Thumbnail
     let thumbnailCid: string | null = null;
     let thumbnailUrl: string | null = null;
     const thumbFilename = `vidme-thumb-${Date.now()}.jpg`;
@@ -180,16 +180,47 @@ export async function finalizeChunkedUpload(req: AuthRequest, res: Response): Pr
       try { if (fs.existsSync(thumbPath)) fs.unlinkSync(thumbPath); } catch (_) {}
     }
 
+    // Pin to IPFS
     const { cid, gatewayUrl } = await uploadToIPFS(assembledPath, path.basename(filename));
     fs.unlinkSync(assembledPath);
 
-    res.json({ cid, gatewayUrl, duration, thumbnailCid, thumbnailUrl });
+    await redis.set(
+      `finalize:${jobId}`,
+      JSON.stringify({ status: 'done', result: { cid, gatewayUrl, duration, thumbnailCid, thumbnailUrl } }),
+      'EX', FINALIZE_TTL,
+    );
   } catch (err) {
-    if (fs.existsSync(assembledPath)) try { fs.unlinkSync(assembledPath); } catch (_) {}
-    if (fs.existsSync(chunkDir)) fs.rmSync(chunkDir, { recursive: true, force: true });
     console.error('Chunked upload finalize error:', err);
-    res.status(500).json({ error: 'Failed to assemble and upload video' });
+    await fail('Failed to assemble and upload video').catch(() => {});
   }
+}
+
+// POST /api/videos/finalize-upload — returns immediately with jobId
+export async function finalizeChunkedUpload(req: AuthRequest, res: Response): Promise<void> {
+  const { uploadId, totalChunks, filename } = req.body;
+  if (!uploadId || !totalChunks || !filename) {
+    res.status(400).json({ error: 'Missing finalize parameters (uploadId, totalChunks, filename)' });
+    return;
+  }
+
+  const jobId = uuidv4();
+  await redis.set(`finalize:${jobId}`, JSON.stringify({ status: 'processing' }), 'EX', FINALIZE_TTL);
+
+  // Fire-and-forget — Cloudflare 100s timeout won't affect this
+  runFinalize(jobId, uploadId, Number(totalChunks), filename).catch(console.error);
+
+  res.json({ jobId });
+}
+
+// GET /api/videos/finalize-status/:jobId — poll until status != 'processing'
+export async function getFinalizeStatus(req: AuthRequest, res: Response): Promise<void> {
+  const { jobId } = req.params;
+  const raw = await redis.get(`finalize:${jobId}`);
+  if (!raw) {
+    res.status(404).json({ error: 'Job not found or expired' });
+    return;
+  }
+  res.json(JSON.parse(raw));
 }
 
 export async function createVideo(req: AuthRequest, res: Response): Promise<void> {

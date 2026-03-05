@@ -6,6 +6,7 @@ import {
   uploadThumbnailFile,
   uploadChunk,
   finalizeChunkedUpload,
+  getFinalizeStatus,
   createVideo,
   listVideos,
   getVideo,
@@ -46,6 +47,9 @@ router.post('/upload-chunk', authenticate, uploadChunkMiddleware.single('chunk')
 );
 router.post('/finalize-upload', authenticate, (req, res) =>
   finalizeChunkedUpload(req as any, res)
+);
+router.get('/finalize-status/:jobId', authenticate, (req, res) =>
+  getFinalizeStatus(req as any, res)
 );
 router.post('/upload-thumbnail', authenticate, uploadThumbnail.single('thumbnail'), (req, res) =>
   uploadThumbnailFile(req as any, res)

@@ -210,8 +210,8 @@ class ApiService {
         onProgress?.call(bytesSent, totalSize);
       }
 
-      // All chunks received — ask server to assemble + pin to IPFS
-      final response = await _uploadDio.post(
+      // Kick off async finalize — returns jobId immediately (no Cloudflare timeout)
+      final finalizeResp = await _uploadDio.post(
         '/api/videos/finalize-upload',
         data: {
           'uploadId': uploadId,
@@ -220,7 +220,26 @@ class ApiService {
         },
         options: Options(headers: headers),
       );
-      return response.data as Map<String, dynamic>;
+      final jobId = (finalizeResp.data as Map<String, dynamic>)['jobId'] as String;
+
+      // Poll until processing completes (3s interval, 30min max)
+      final deadline = DateTime.now().add(const Duration(minutes: 30));
+      while (DateTime.now().isBefore(deadline)) {
+        await Future.delayed(const Duration(seconds: 3));
+        final statusResp = await _uploadDio.get(
+          '/api/videos/finalize-status/$jobId',
+          options: Options(headers: headers),
+        );
+        final job = statusResp.data as Map<String, dynamic>;
+        if (job['status'] == 'done') {
+          return job['result'] as Map<String, dynamic>;
+        }
+        if (job['status'] == 'error') {
+          throw ApiException(job['error'] as String? ?? 'Processing failed');
+        }
+        // status == 'processing' → keep polling
+      }
+      throw ApiException('Upload processing timed out. Please try again.');
     } on DioException catch (e) {
       final data = e.response?.data;
       final msg = (data is Map && data['error'] != null)
