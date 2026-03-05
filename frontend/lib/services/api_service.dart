@@ -220,7 +220,8 @@ class ApiService {
         },
         options: Options(headers: headers),
       );
-      final jobId = (finalizeResp.data as Map<String, dynamic>)['jobId'] as String;
+      final finalizeData = finalizeResp.data as Map;
+      final jobId = finalizeData['jobId'].toString();
 
       // Poll until processing completes (3s interval, 30min max)
       final deadline = DateTime.now().add(const Duration(minutes: 30));
@@ -230,12 +231,20 @@ class ApiService {
           '/api/videos/finalize-status/$jobId',
           options: Options(headers: headers),
         );
-        final job = statusResp.data as Map<String, dynamic>;
-        if (job['status'] == 'done') {
-          return job['result'] as Map<String, dynamic>;
+        final job = statusResp.data as Map;
+        final status = job['status'].toString();
+        if (status == 'done') {
+          final result = job['result'] as Map;
+          return {
+            'cid': result['cid'].toString(),
+            'gatewayUrl': result['gatewayUrl'].toString(),
+            'duration': result['duration'],
+            'thumbnailCid': result['thumbnailCid']?.toString(),
+            'thumbnailUrl': result['thumbnailUrl']?.toString(),
+          };
         }
-        if (job['status'] == 'error') {
-          throw ApiException(job['error'] as String? ?? 'Processing failed');
+        if (status == 'error') {
+          throw ApiException(job['error']?.toString() ?? 'Processing failed');
         }
         // status == 'processing' → keep polling
       }
