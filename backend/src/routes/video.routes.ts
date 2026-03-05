@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth.middleware';
-import { uploadVideo, uploadThumbnail } from '../middleware/upload.middleware';
+import { uploadVideo, uploadThumbnail, uploadChunk as uploadChunkMiddleware } from '../middleware/upload.middleware';
 import {
   uploadVideoFile,
   uploadThumbnailFile,
+  uploadChunk,
+  finalizeChunkedUpload,
   createVideo,
   listVideos,
   getVideo,
@@ -38,6 +40,12 @@ router.get('/:id', (req, res) => {
 // Protected
 router.post('/upload', authenticate, uploadVideo.single('video'), (req, res) =>
   uploadVideoFile(req as any, res)
+);
+router.post('/upload-chunk', authenticate, uploadChunkMiddleware.single('chunk'), (req, res) =>
+  uploadChunk(req as any, res)
+);
+router.post('/finalize-upload', authenticate, (req, res) =>
+  finalizeChunkedUpload(req as any, res)
 );
 router.post('/upload-thumbnail', authenticate, uploadThumbnail.single('thumbnail'), (req, res) =>
   uploadThumbnailFile(req as any, res)

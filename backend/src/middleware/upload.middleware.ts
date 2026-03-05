@@ -52,6 +52,15 @@ const thumbnailFileFilter = (
   }
 };
 
+// Raw chunk storage — no MIME filter (chunks are binary, not full video files)
+export const uploadChunk = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, os.tmpdir()),
+    filename: (_req, _file, cb) => cb(null, `vidme-chunk-${Date.now()}`),
+  }),
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100 MB max per chunk
+});
+
 export const uploadThumbnail = multer({
   storage: thumbnailStorage,
   fileFilter: thumbnailFileFilter,

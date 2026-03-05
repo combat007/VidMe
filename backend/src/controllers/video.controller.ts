@@ -88,6 +88,110 @@ export async function uploadVideoFile(req: AuthRequest, res: Response): Promise<
   }
 }
 
+// ── Chunked upload (bypasses Cloudflare 100 MB limit) ───────────────────────
+
+export async function uploadChunk(req: AuthRequest, res: Response): Promise<void> {
+  if (!req.file) {
+    res.status(400).json({ error: 'No chunk data provided' });
+    return;
+  }
+  const { uploadId, chunkIndex, totalChunks } = req.body;
+  if (!uploadId || chunkIndex === undefined || !totalChunks) {
+    fs.unlinkSync(req.file.path);
+    res.status(400).json({ error: 'Missing chunk metadata (uploadId, chunkIndex, totalChunks)' });
+    return;
+  }
+
+  const chunkDir = path.join(os.tmpdir(), 'vidme-chunks', uploadId);
+  fs.mkdirSync(chunkDir, { recursive: true });
+  const dest = path.join(chunkDir, `chunk_${chunkIndex}`);
+  fs.renameSync(req.file.path, dest);
+
+  res.json({ received: true, chunkIndex: Number(chunkIndex), totalChunks: Number(totalChunks) });
+}
+
+export async function finalizeChunkedUpload(req: AuthRequest, res: Response): Promise<void> {
+  const { uploadId, totalChunks, filename } = req.body;
+  if (!uploadId || !totalChunks || !filename) {
+    res.status(400).json({ error: 'Missing finalize parameters (uploadId, totalChunks, filename)' });
+    return;
+  }
+
+  const chunkDir = path.join(os.tmpdir(), 'vidme-chunks', uploadId);
+  const ext = path.extname(filename) || '.mp4';
+  const assembledPath = path.join(os.tmpdir(), `vidme-assembled-${uploadId}${ext}`);
+
+  try {
+    // Stream-assemble chunks (memory-efficient)
+    const writeStream = fs.createWriteStream(assembledPath);
+    for (let i = 0; i < Number(totalChunks); i++) {
+      const chunkPath = path.join(chunkDir, `chunk_${i}`);
+      if (!fs.existsSync(chunkPath)) {
+        writeStream.destroy();
+        res.status(400).json({ error: `Missing chunk ${i}` });
+        return;
+      }
+      await new Promise<void>((resolve, reject) => {
+        const rs = fs.createReadStream(chunkPath);
+        rs.on('error', reject);
+        rs.on('end', resolve);
+        rs.pipe(writeStream, { end: false });
+      });
+    }
+    await new Promise<void>((resolve, reject) => {
+      writeStream.end();
+      writeStream.on('finish', resolve);
+      writeStream.on('error', reject);
+    });
+
+    // Clean up chunks
+    fs.rmSync(chunkDir, { recursive: true, force: true });
+
+    // Reuse same processing pipeline as uploadVideoFile
+    let duration: number;
+    try {
+      duration = await getVideoDuration(assembledPath);
+    } catch {
+      fs.unlinkSync(assembledPath);
+      res.status(422).json({ error: 'Could not read video duration. Ensure the file is a valid video.' });
+      return;
+    }
+
+    const durationError = validateDuration(duration);
+    if (durationError) {
+      fs.unlinkSync(assembledPath);
+      res.status(422).json({ error: durationError });
+      return;
+    }
+
+    let thumbnailCid: string | null = null;
+    let thumbnailUrl: string | null = null;
+    const thumbFilename = `vidme-thumb-${Date.now()}.jpg`;
+    const thumbPath = path.join(os.tmpdir(), thumbFilename);
+    try {
+      const thumbTime = Math.max(1, Math.round(duration * 0.1));
+      await extractThumbnail(assembledPath, os.tmpdir(), thumbFilename, thumbTime);
+      const thumbUpload = await uploadToIPFS(thumbPath, thumbFilename);
+      thumbnailCid = thumbUpload.cid;
+      thumbnailUrl = thumbUpload.gatewayUrl;
+    } catch (thumbErr) {
+      console.error('Thumbnail extraction failed (non-fatal):', thumbErr);
+    } finally {
+      try { if (fs.existsSync(thumbPath)) fs.unlinkSync(thumbPath); } catch (_) {}
+    }
+
+    const { cid, gatewayUrl } = await uploadToIPFS(assembledPath, path.basename(filename));
+    fs.unlinkSync(assembledPath);
+
+    res.json({ cid, gatewayUrl, duration, thumbnailCid, thumbnailUrl });
+  } catch (err) {
+    if (fs.existsSync(assembledPath)) try { fs.unlinkSync(assembledPath); } catch (_) {}
+    if (fs.existsSync(chunkDir)) fs.rmSync(chunkDir, { recursive: true, force: true });
+    console.error('Chunked upload finalize error:', err);
+    res.status(500).json({ error: 'Failed to assemble and upload video' });
+  }
+}
+
 export async function createVideo(req: AuthRequest, res: Response): Promise<void> {
   const { title, description, ipfsCid, thumbnailCid, duration, is18Plus, likesEnabled, commentsEnabled } = req.body;
 

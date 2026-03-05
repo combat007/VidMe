@@ -168,21 +168,57 @@ class ApiService {
     );
   }
 
+  // 10 MB per chunk — keeps each request well under any proxy timeout
+  static const int _chunkSize = 10 * 1024 * 1024;
+
   static Future<Map<String, dynamic>> uploadVideoBytes(
     Uint8List bytes,
     String filename, {
     void Function(int, int)? onProgress,
   }) async {
     final headers = await _authHeaders();
-    final formData = FormData.fromMap({
-      'video': MultipartFile.fromBytes(bytes, filename: filename),
-    });
+    final totalSize = bytes.length;
+    final totalChunks = (totalSize / _chunkSize).ceil().clamp(1, 9999);
+    final uploadId = '${DateTime.now().millisecondsSinceEpoch}';
+    int bytesSent = 0;
+
     try {
+      for (int i = 0; i < totalChunks; i++) {
+        final start = i * _chunkSize;
+        final end = (start + _chunkSize).clamp(0, totalSize);
+        final chunk = bytes.sublist(start, end);
+
+        final formData = FormData.fromMap({
+          'chunk': MultipartFile.fromBytes(chunk, filename: 'chunk_$i'),
+          'uploadId': uploadId,
+          'chunkIndex': i.toString(),
+          'totalChunks': totalChunks.toString(),
+        });
+
+        await _uploadDio.post(
+          '/api/videos/upload-chunk',
+          data: formData,
+          options: Options(headers: headers),
+          onSendProgress: (sent, total) {
+            if (onProgress != null && total > 0) {
+              onProgress(bytesSent + sent, totalSize);
+            }
+          },
+        );
+
+        bytesSent = end;
+        onProgress?.call(bytesSent, totalSize);
+      }
+
+      // All chunks received — ask server to assemble + pin to IPFS
       final response = await _uploadDio.post(
-        '/api/videos/upload',
-        data: formData,
+        '/api/videos/finalize-upload',
+        data: {
+          'uploadId': uploadId,
+          'totalChunks': totalChunks,
+          'filename': filename,
+        },
         options: Options(headers: headers),
-        onSendProgress: onProgress,
       );
       return response.data as Map<String, dynamic>;
     } on DioException catch (e) {
