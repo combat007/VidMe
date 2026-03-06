@@ -13,20 +13,20 @@ class UploadScreen extends StatefulWidget {
 }
 
 class _UploadScreenState extends State<UploadScreen> {
-  // Step 0 = pick file, 1 = uploading, 2 = fill metadata, 3 = publishing
-  int _step = 0;
-
   PlatformFile? _pickedFile;
   VideoPlayerController? _previewController;
   bool _previewInitialized = false;
+
+  // Upload state
+  bool _isUploading = false;
+  bool _isProcessing = false;
+  double _uploadProgress = 0;
+  String? _uploadError;
 
   // Upload result
   String? _ipfsCid;
   String? _gatewayUrl;
   int? _duration;
-  double _uploadProgress = 0;
-  bool _isProcessing = false; // true after 100% send, waiting for server
-  String? _uploadError;
 
   // Thumbnail
   String? _thumbnailCid;
@@ -43,6 +43,8 @@ class _UploadScreenState extends State<UploadScreen> {
   bool _likesEnabled = true;
   bool _commentsEnabled = true;
 
+  bool _isPublishing = false;
+
   @override
   void dispose() {
     _titleController.dispose();
@@ -55,32 +57,40 @@ class _UploadScreenState extends State<UploadScreen> {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.video,
       allowMultiple: false,
-      withData: true, // required on web; bytes always populated
+      withData: true,
     );
     if (result == null || result.files.isEmpty) return;
 
+    final file = result.files.first;
+    _previewController?.dispose();
     setState(() {
-      _pickedFile = result.files.first;
-      _step = 0;
+      _pickedFile = file;
+      _isUploading = false;
+      _isProcessing = false;
+      _uploadProgress = 0;
       _uploadError = null;
+      _ipfsCid = null;
+      _gatewayUrl = null;
+      _duration = null;
+      _thumbnailCid = null;
+      _thumbnailUrl = null;
+      _customThumbnailCid = null;
+      _customThumbnailUrl = null;
+      _previewController = null;
+      _previewInitialized = false;
     });
-    await _uploadVideo();
+    await _uploadVideo(file);
   }
 
-  Future<void> _uploadVideo() async {
-    if (_pickedFile == null) return;
-
-    final bytes = _pickedFile!.bytes;
+  Future<void> _uploadVideo(PlatformFile file) async {
+    final bytes = file.bytes;
     if (bytes == null) {
-      setState(() {
-        _uploadError = 'Could not read file data. Please try again.';
-        _step = 0;
-      });
+      setState(() => _uploadError = 'Could not read file data. Please try again.');
       return;
     }
 
     setState(() {
-      _step = 1;
+      _isUploading = true;
       _uploadProgress = 0;
       _isProcessing = false;
       _uploadError = null;
@@ -89,7 +99,7 @@ class _UploadScreenState extends State<UploadScreen> {
     try {
       final result = await ApiService.uploadVideoBytes(
         bytes,
-        _pickedFile!.name,
+        file.name,
         onProgress: (sent, total) {
           if (total > 0) {
             final progress = sent / total;
@@ -101,28 +111,33 @@ class _UploadScreenState extends State<UploadScreen> {
         },
       );
 
-      _ipfsCid = result['cid'] as String;
-      _gatewayUrl = result['gatewayUrl'] as String;
-      _duration = result['duration'] as int;
-      _thumbnailCid = result['thumbnailCid'] as String?;
-      _thumbnailUrl = result['thumbnailUrl'] as String?;
+      _previewController?.dispose();
+      final gatewayUrl = result['gatewayUrl'] as String;
+      final controller = VideoPlayerController.networkUrl(Uri.parse(gatewayUrl));
+      await controller.initialize();
 
-      // Initialize preview player
-      _previewController = VideoPlayerController.networkUrl(Uri.parse(_gatewayUrl!));
-      await _previewController!.initialize();
       setState(() {
+        _ipfsCid = result['cid'] as String;
+        _gatewayUrl = gatewayUrl;
+        _duration = result['duration'] as int;
+        _thumbnailCid = result['thumbnailCid'] as String?;
+        _thumbnailUrl = result['thumbnailUrl'] as String?;
+        _previewController = controller;
         _previewInitialized = true;
-        _step = 2;
+        _isUploading = false;
+        _isProcessing = false;
       });
     } on ApiException catch (e) {
       setState(() {
         _uploadError = e.message;
-        _step = 0;
+        _isUploading = false;
+        _isProcessing = false;
       });
     } catch (e) {
       setState(() {
         _uploadError = 'Upload failed: $e';
-        _step = 0;
+        _isUploading = false;
+        _isProcessing = false;
       });
     }
   }
@@ -131,7 +146,7 @@ class _UploadScreenState extends State<UploadScreen> {
     if (!_formKey.currentState!.validate()) return;
     if (_ipfsCid == null || _duration == null) return;
 
-    setState(() => _step = 3);
+    setState(() => _isPublishing = true);
     try {
       await ApiService.createVideo(
         title: _titleController.text.trim(),
@@ -145,7 +160,6 @@ class _UploadScreenState extends State<UploadScreen> {
         likesEnabled: _likesEnabled,
         commentsEnabled: _commentsEnabled,
       );
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -156,7 +170,7 @@ class _UploadScreenState extends State<UploadScreen> {
         Navigator.pop(context);
       }
     } on ApiException catch (e) {
-      setState(() => _step = 2);
+      setState(() => _isPublishing = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(e.message), backgroundColor: Colors.red[700]),
@@ -176,21 +190,23 @@ class _UploadScreenState extends State<UploadScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Upload Video'),
-      ),
+      appBar: AppBar(title: const Text('Upload Video')),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 600),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (_step == 0) _buildPickStep(),
-                if (_step == 1) _buildUploadingStep(),
-                if (_step == 2 || _step == 3) _buildMetadataStep(),
-              ],
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 600),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildVideoSection(),
+                  if (_pickedFile != null) ...[
+                    const SizedBox(height: 24),
+                    _buildForm(),
+                  ],
+                ],
+              ),
             ),
           ),
         ),
@@ -198,165 +214,198 @@ class _UploadScreenState extends State<UploadScreen> {
     );
   }
 
-  Widget _buildPickStep() {
+  Widget _buildVideoSection() {
+    if (_pickedFile == null) {
+      return _buildPickerArea();
+    }
+    if (_isUploading) {
+      return _buildUploadProgress();
+    }
+    if (_uploadError != null) {
+      return Column(
+        children: [
+          _buildPickerArea(),
+          const SizedBox(height: 16),
+          _buildErrorBanner(_uploadError!),
+        ],
+      );
+    }
+    // Upload done — show preview
     return Column(
       children: [
-        GestureDetector(
-          onTap: _pickVideo,
-          child: Container(
-            width: double.infinity,
-            height: 200,
-            decoration: BoxDecoration(
-              color: const Color(0xFF1A1A1A),
+        if (_previewInitialized && _previewController != null) ...[
+          AspectRatio(
+            aspectRatio: _previewController!.value.aspectRatio,
+            child: ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFF3A3A3A), width: 2),
-            ),
-            child: const Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.upload_file, size: 64, color: Color(0xFF1E88E5)),
-                SizedBox(height: 12),
-                Text(
-                  'Tap to select a video',
-                  style: TextStyle(color: Colors.white, fontSize: 16),
-                ),
-                SizedBox(height: 8),
-                Text(
-                  'MP4, WebM, MOV — 1 min to 6 hours',
-                  style: TextStyle(color: Colors.grey, fontSize: 13),
-                ),
-              ],
+              child: VideoPlayer(_previewController!),
             ),
           ),
-        ),
-        if (_uploadError != null) ...[
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.red[900]!.withOpacity(0.3),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.red[700]!),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.error_outline, color: Colors.red),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(_uploadError!,
-                      style: const TextStyle(color: Colors.red)),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                icon: Icon(
+                  _previewController!.value.isPlaying
+                      ? Icons.pause_circle
+                      : Icons.play_circle,
+                  color: Colors.white,
+                  size: 36,
                 ),
-              ],
+                onPressed: () => setState(() {
+                  _previewController!.value.isPlaying
+                      ? _previewController!.pause()
+                      : _previewController!.play();
+                }),
+              ),
+              if (_duration != null)
+                Text(
+                  'Duration: ${_formatDuration(_duration!)}',
+                  style: const TextStyle(color: Colors.grey),
+                ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: _isPublishing ? null : _pickVideo,
+          icon: const Icon(Icons.swap_horiz, size: 16),
+          label: const Text('Change Video'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPickerArea() {
+    return GestureDetector(
+      onTap: _pickVideo,
+      child: Container(
+        width: double.infinity,
+        height: 200,
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A1A1A),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFF3A3A3A), width: 2),
+        ),
+        child: const Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.upload_file, size: 64, color: Color(0xFF1E88E5)),
+            SizedBox(height: 12),
+            Text(
+              'Tap to select a video',
+              style: TextStyle(color: Colors.white, fontSize: 16),
             ),
+            SizedBox(height: 8),
+            Text(
+              'MP4, WebM, MOV — 1 min to 6 hours',
+              style: TextStyle(color: Colors.grey, fontSize: 13),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUploadProgress() {
+    return Column(
+      children: [
+        Container(
+          width: double.infinity,
+          height: 200,
+          decoration: BoxDecoration(
+            color: const Color(0xFF1A1A1A),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFF3A3A3A), width: 2),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Stack(
+                alignment: Alignment.center,
+                children: [
+                  SizedBox(
+                    width: 72,
+                    height: 72,
+                    child: CircularProgressIndicator(
+                      value: _isProcessing
+                          ? null
+                          : (_uploadProgress > 0 ? _uploadProgress : null),
+                      strokeWidth: 4,
+                      backgroundColor: const Color(0xFF2A2A2A),
+                      valueColor:
+                          const AlwaysStoppedAnimation(Color(0xFF1E88E5)),
+                    ),
+                  ),
+                  Icon(
+                    _isProcessing ? Icons.settings : Icons.cloud_upload,
+                    size: 30,
+                    color: const Color(0xFF1E88E5),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _isProcessing ? 'Processing...' : 'Uploading...',
+                style: const TextStyle(color: Colors.white, fontSize: 15),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _isProcessing
+                    ? 'Generating thumbnail — may take a moment'
+                    : _uploadProgress > 0
+                        ? '${(_uploadProgress * 100).toStringAsFixed(0)}%'
+                        : 'Starting...',
+                style: const TextStyle(color: Colors.grey, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+        if (!_isProcessing && _uploadProgress > 0) ...[
+          const SizedBox(height: 8),
+          LinearProgressIndicator(
+            value: _uploadProgress,
+            backgroundColor: const Color(0xFF2A2A2A),
+            valueColor: const AlwaysStoppedAnimation(Color(0xFF1E88E5)),
+            borderRadius: BorderRadius.circular(4),
           ),
         ],
       ],
     );
   }
 
-  Widget _buildUploadingStep() {
-    return Column(
-      children: [
-        const SizedBox(height: 60),
-        Stack(
-          alignment: Alignment.center,
-          children: [
-            SizedBox(
-              width: 96,
-              height: 96,
-              child: CircularProgressIndicator(
-                value: _isProcessing ? null : (_uploadProgress > 0 ? _uploadProgress : null),
-                strokeWidth: 5,
-                backgroundColor: const Color(0xFF2A2A2A),
-                valueColor: const AlwaysStoppedAnimation(Color(0xFF1E88E5)),
-              ),
-            ),
-            Icon(
-              _isProcessing ? Icons.settings : Icons.cloud_upload,
-              size: 40,
-              color: const Color(0xFF1E88E5),
-            ),
-          ],
-        ),
-        const SizedBox(height: 32),
-        Text(
-          _isProcessing ? 'Processing video...' : 'Uploading...',
-          style: const TextStyle(
-              color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          _isProcessing
-              ? 'Generating thumbnail and saving — this may take a minute'
-              : _uploadProgress > 0
-                  ? '${(_uploadProgress * 100).toStringAsFixed(0)}% uploaded'
-                  : 'Starting upload...',
-          style: const TextStyle(color: Colors.grey, fontSize: 13),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 32),
-        if (!_isProcessing && _uploadProgress > 0)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: LinearProgressIndicator(
-              value: _uploadProgress,
-              backgroundColor: const Color(0xFF2A2A2A),
-              valueColor: const AlwaysStoppedAnimation(Color(0xFF1E88E5)),
-              borderRadius: BorderRadius.circular(4),
-            ),
+  Widget _buildErrorBanner(String message) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.red[900]!.withOpacity(0.3),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.red[700]!),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline, color: Colors.red),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(message, style: const TextStyle(color: Colors.red)),
           ),
-      ],
+        ],
+      ),
     );
   }
 
-  Widget _buildMetadataStep() {
+  Widget _buildForm() {
+    final uploadDone = _ipfsCid != null && !_isUploading;
     return Form(
       key: _formKey,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Preview
-          if (_previewInitialized && _previewController != null)
-            Column(
-              children: [
-                AspectRatio(
-                  aspectRatio: _previewController!.value.aspectRatio,
-                  child: VideoPlayer(_previewController!),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    IconButton(
-                      icon: Icon(
-                        _previewController!.value.isPlaying
-                            ? Icons.pause_circle
-                            : Icons.play_circle,
-                        color: Colors.white,
-                        size: 36,
-                      ),
-                      onPressed: () {
-                        setState(() {
-                          _previewController!.value.isPlaying
-                              ? _previewController!.pause()
-                              : _previewController!.play();
-                        });
-                      },
-                    ),
-                    if (_duration != null)
-                      Text(
-                        'Duration: ${_formatDuration(_duration!)}',
-                        style: const TextStyle(color: Colors.grey),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-              ],
-            ),
-
-          // Thumbnail
-          _buildThumbnailSection(),
-          const SizedBox(height: 16),
+          if (uploadDone) ...[
+            _buildThumbnailSection(),
+            const SizedBox(height: 16),
+          ],
 
           // Title
           TextFormField(
@@ -387,12 +436,12 @@ class _UploadScreenState extends State<UploadScreen> {
           ),
           const SizedBox(height: 20),
 
-          // Toggles
-          const Text('Settings',
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold)),
+          // Settings toggles
+          const Text(
+            'Settings',
+            style: TextStyle(
+                color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+          ),
           const SizedBox(height: 12),
 
           _buildToggle(
@@ -417,19 +466,52 @@ class _UploadScreenState extends State<UploadScreen> {
 
           const SizedBox(height: 32),
 
-          // Publish button
-          ElevatedButton.icon(
-            onPressed: _step == 3 ? null : _publish,
-            icon: _step == 3
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
+          if (_isUploading)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A1A),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Row(
+                children: [
+                  SizedBox(
+                    width: 16,
+                    height: 16,
                     child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white),
-                  )
-                : const Icon(Icons.publish),
-            label: Text(_step == 3 ? 'Publishing...' : 'Publish Video'),
+                        strokeWidth: 2, color: Color(0xFF1E88E5)),
+                  ),
+                  SizedBox(width: 12),
+                  Text(
+                    'Upload in progress — you can fill the form now',
+                    style: TextStyle(color: Colors.grey, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+
+          const SizedBox(height: 12),
+
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: (uploadDone && !_isPublishing) ? _publish : null,
+              icon: _isPublishing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.publish),
+              label: Text(_isPublishing
+                  ? 'Publishing...'
+                  : _isUploading
+                      ? 'Waiting for upload...'
+                      : 'Publish Video'),
+            ),
           ),
+          const SizedBox(height: 24),
         ],
       ),
     );
@@ -551,8 +633,10 @@ class _UploadScreenState extends State<UploadScreen> {
       child: SwitchListTile(
         secondary: Icon(icon, color: Colors.grey),
         title: Text(label, style: const TextStyle(color: Colors.white)),
-        subtitle:
-            sublabel != null ? Text(sublabel, style: const TextStyle(color: Colors.grey, fontSize: 12)) : null,
+        subtitle: sublabel != null
+            ? Text(sublabel,
+                style: const TextStyle(color: Colors.grey, fontSize: 12))
+            : null,
         value: value,
         onChanged: onChanged,
         activeColor: const Color(0xFF1E88E5),
