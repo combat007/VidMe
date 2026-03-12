@@ -32,6 +32,18 @@ function extractThumbnail(
   });
 }
 
+// Move moov atom to the start of the file so browsers can seek without
+// buffering the whole video (web-optimised / "fast start" MP4).
+function optimizeForWeb(inputPath: string, outputPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    ffmpeg(inputPath)
+      .outputOptions(['-movflags +faststart', '-c:v copy', '-c:a copy'])
+      .output(outputPath)
+      .on('end', () => resolve())
+      .on('error', (err: Error) => reject(err));
+  });
+}
+
 export async function uploadVideoFile(req: AuthRequest, res: Response): Promise<void> {
   if (!req.file) {
     res.status(400).json({ error: 'No video file provided' });
@@ -76,12 +88,22 @@ export async function uploadVideoFile(req: AuthRequest, res: Response): Promise<
       try { if (fs.existsSync(thumbPath)) fs.unlinkSync(thumbPath); } catch (_) {}
     }
 
-    // Upload to IPFS via Pinata
+    // Optimize for web streaming (moov atom to start for accurate seeking)
     const fileName = path.basename(req.file.originalname);
-    const { cid, gatewayUrl } = await uploadToIPFS(filePath, fileName);
+    const ext = path.extname(fileName) || '.mp4';
+    const optimizedPath = path.join(os.tmpdir(), `vidme-opt-${Date.now()}${ext}`);
+    try {
+      await optimizeForWeb(filePath, optimizedPath);
+      fs.unlinkSync(filePath);
+    } catch (optErr) {
+      console.error('Web optimization failed, using original:', optErr);
+      fs.copyFileSync(filePath, optimizedPath);
+      fs.unlinkSync(filePath);
+    }
 
-    // Clean up temp file
-    fs.unlinkSync(filePath);
+    // Upload to IPFS
+    const { cid, gatewayUrl } = await uploadToIPFS(optimizedPath, fileName);
+    fs.unlinkSync(optimizedPath);
 
     res.json({ cid, gatewayUrl, duration, thumbnailCid, thumbnailUrl });
   } catch (err) {
@@ -180,9 +202,21 @@ async function runFinalize(jobId: string, uploadId: string, totalChunks: number,
       try { if (fs.existsSync(thumbPath)) fs.unlinkSync(thumbPath); } catch (_) {}
     }
 
-    // Pin to IPFS
-    const { cid, gatewayUrl } = await uploadToIPFS(assembledPath, path.basename(filename));
-    fs.unlinkSync(assembledPath);
+    // Optimize for web streaming (moov atom to start for accurate seeking)
+    const baseFilename = path.basename(filename);
+    const optExt = path.extname(baseFilename) || '.mp4';
+    const optimizedPath = path.join(os.tmpdir(), `vidme-opt-${uploadId}${optExt}`);
+    try {
+      await optimizeForWeb(assembledPath, optimizedPath);
+      fs.unlinkSync(assembledPath);
+    } catch (optErr) {
+      console.error('Web optimization failed, using original:', optErr);
+      fs.renameSync(assembledPath, optimizedPath);
+    }
+
+    // Upload to IPFS
+    const { cid, gatewayUrl } = await uploadToIPFS(optimizedPath, baseFilename);
+    fs.unlinkSync(optimizedPath);
 
     await redis.set(
       `finalize:${jobId}`,
