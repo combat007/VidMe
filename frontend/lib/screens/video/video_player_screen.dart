@@ -34,6 +34,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   // ── player — controller lives in State; never recreated on mode switch
   VideoPlayerController? _controller;
   bool _playerInitialized = false;
+  String? _playerError;
 
   // ── auto-hiding play controls (centre buttons + seek bar + volume)
   bool _showControls = true;
@@ -111,7 +112,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       final video = await ApiService.getVideo(widget.videoId);
       if (!mounted) return;
       setState(() { _video = video; _loadingVideo = false; });
-      _initPlayer(ApiConfig.videoUrl(video.ipfsCid));
+      _initPlayer(video.gatewayUrl);
       _loadLikes();
       _loadBookmarkStatus();
     } on ApiException catch (e) {
@@ -121,19 +122,31 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   }
 
   void _initPlayer(String url) {
+    _controller?.removeListener(_onControllerUpdate);
+    _controller?.dispose();
     _controller = VideoPlayerController.networkUrl(
       Uri.parse(url),
       videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
     );
     _controller!.addListener(_onControllerUpdate);
-    _controller!.initialize().then((_) {
+    _controller!.initialize()
+        .timeout(const Duration(seconds: 30))
+        .then((_) {
       if (!mounted) return;
-      setState(() => _playerInitialized = true);
+      setState(() { _playerInitialized = true; _playerError = null; });
       _resetHideTimer();
-      // Wait for the VideoPlayer widget to be rendered (and the <video> DOM
-      // element to be mounted by video_player_web) before attempting autoplay.
       WidgetsBinding.instance.addPostFrameCallback((_) => _tryAutoplay());
-    }).catchError((e) => debugPrint('Player init error: $e'));
+    }).catchError((e) {
+      if (!mounted) return;
+      setState(() => _playerError = 'Could not load video: $e');
+      debugPrint('Player init error: $e');
+    });
+  }
+
+  void _retryPlayer() {
+    if (_video == null) return;
+    setState(() { _playerInitialized = false; _playerError = null; });
+    _initPlayer(_video!.gatewayUrl);
   }
 
   /// Starts playback immediately after the controller is ready.
@@ -478,8 +491,32 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                   color: Colors.white54, strokeWidth: 2),
             ),
 
-          // 4b. Init spinner (no thumbnail)
-          if (!_playerInitialized && _video?.thumbnailUrl == null)
+          // 4b. Init spinner (no thumbnail) or visible error
+          if (_playerError != null)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.error_outline, color: Colors.redAccent, size: 48),
+                    const SizedBox(height: 12),
+                    Text(
+                      _playerError!,
+                      style: const TextStyle(color: Colors.white70, fontSize: 13),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    TextButton.icon(
+                      onPressed: _retryPlayer,
+                      icon: const Icon(Icons.refresh, color: Colors.white),
+                      label: const Text('Retry', style: TextStyle(color: Colors.white)),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else if (!_playerInitialized && _video?.thumbnailUrl == null)
             const Center(
                 child: CircularProgressIndicator(color: Colors.white54)),
 
