@@ -112,7 +112,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       final video = await ApiService.getVideo(widget.videoId);
       if (!mounted) return;
       setState(() { _video = video; _loadingVideo = false; });
-      _initPlayer(video.gatewayUrl);
+      _initPlayer(ApiConfig.videoUrl(video.ipfsCid));
       _loadLikes();
       _loadBookmarkStatus();
     } on ApiException catch (e) {
@@ -146,7 +146,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   void _retryPlayer() {
     if (_video == null) return;
     setState(() { _playerInitialized = false; _playerError = null; });
-    _initPlayer(_video!.gatewayUrl);
+    _initPlayer(ApiConfig.videoUrl(_video!.ipfsCid));
   }
 
   /// Starts playback immediately after the controller is ready.

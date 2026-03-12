@@ -27,8 +27,12 @@ class ApiConfig {
 
   static const String ipfsGateway = 'https://ipfs.filebase.io/ipfs';
 
-  // Filebase gateway has full CORS (Access-Control-Allow-Origin: *) and
-  // supports Range requests natively — use it directly on all platforms.
-  static String videoUrl(String cid) => '$ipfsGateway/$cid';
-  static String thumbnailUrl(String cid) => '$ipfsGateway/$cid';
+  // Web: route through nginx (/ipfs/) — makes requests same-origin so
+  // video_player_web's crossorigin="anonymous" works without CORS issues.
+  // Mobile: direct Filebase URL (no crossorigin attribute, no CORS concern).
+  static String videoUrl(String cid) =>
+      kIsWeb ? '$baseUrl/ipfs/$cid' : '$ipfsGateway/$cid';
+
+  static String thumbnailUrl(String cid) =>
+      kIsWeb ? '$baseUrl/ipfs/$cid' : '$ipfsGateway/$cid';
 }
