@@ -1,10 +1,3 @@
-import PinataSDK from '@pinata/sdk';
-
-const pinata = new PinataSDK({
-  pinataApiKey: process.env.PINATA_API_KEY!,
-  pinataSecretApiKey: process.env.PINATA_API_SECRET!,
-});
-
-export const PINATA_GATEWAY = 'https://gateway.pinata.cloud/ipfs';
-
-export default pinata;
+// Filebase IPFS gateway — replaces the old Pinata gateway
+// Export kept as PINATA_GATEWAY so no controller changes are needed
+export const PINATA_GATEWAY = 'https://ipfs.filebase.io/ipfs';

@@ -25,15 +25,15 @@ class ApiConfig {
     return 'http://localhost:3000';
   }
 
-  static const String pinataGateway = 'https://gateway.pinata.cloud/ipfs';
+  static const String ipfsGateway = 'https://ipfs.filebase.io/ipfs';
 
   // On web: route through nginx (/ipfs/) so requests are same-origin.
   // video_player_web sets crossorigin="anonymous" which fails on mobile browsers
   // when the gateway doesn't return CORS headers for Range requests.
-  // On mobile: use direct Pinata URL (no crossorigin attribute issue).
+  // On mobile: use Filebase gateway directly.
   static String videoUrl(String cid) =>
-      kIsWeb ? '$baseUrl/ipfs/$cid' : '$pinataGateway/$cid';
+      kIsWeb ? '$baseUrl/ipfs/$cid' : '$ipfsGateway/$cid';
 
   static String thumbnailUrl(String cid) =>
-      kIsWeb ? '$baseUrl/ipfs/$cid' : '$pinataGateway/$cid';
+      kIsWeb ? '$baseUrl/ipfs/$cid' : '$ipfsGateway/$cid';
 }

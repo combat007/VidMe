@@ -44,9 +44,9 @@ services:
       DATABASE_URL: postgresql://vidme_user:vidme_pass@postgres:5432/vidme_db
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:-change_this_secret_in_production}
-      PINATA_API_KEY: ${PINATA_API_KEY}
-      PINATA_API_SECRET: ${PINATA_API_SECRET}
-      PINATA_JWT: ${PINATA_JWT}
+      FILEBASE_KEY: ${FILEBASE_KEY}
+      FILEBASE_SECRET: ${FILEBASE_SECRET}
+      FILEBASE_BUCKET: ${FILEBASE_BUCKET}
       PORT: 3000
       NODE_ENV: production
       SMTP_HOST: ${SMTP_HOST:-}
