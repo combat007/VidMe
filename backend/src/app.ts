@@ -20,14 +20,17 @@ if (!process.env.JWT_SECRET) {
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost';
+
+// Accept comma-separated origins e.g. "https://www.vidmez.com,https://vidmez.com"
+const ALLOWED_ORIGINS = (process.env.FRONTEND_URL || 'http://localhost')
+  .split(',').map(o => o.trim()).filter(Boolean);
 
 // Security headers (CSP disabled — Flutter web uses inline scripts)
 app.use(helmet({ contentSecurityPolicy: false }));
 
-// Restrict CORS to the configured frontend origin
+// Restrict CORS to the configured frontend origin(s)
 app.use(cors({
-  origin: FRONTEND_URL,
+  origin: ALLOWED_ORIGINS.length === 1 ? ALLOWED_ORIGINS[0] : ALLOWED_ORIGINS,
   credentials: true,
 }));
 
